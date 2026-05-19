@@ -1,0 +1,44 @@
+/*
+ * SMECreateProduct.module.css
+ *
+ * Reuses every rule from AgentCreateProduct.module.css.
+ * Drop this file next to AgentCreateProduct.module.css and import it
+ * in SMECreateProduct.jsx:
+ *
+ *   import styles from './SMECreateProduct.module.css';
+ *
+ * The only visual difference is the primary accent colour (blue → teal/indigo)
+ * so the SME form feels distinct without duplicating hundreds of rules.
+ * If you prefer a single shared stylesheet, point the import at
+ * AgentCreateProduct.module.css directly.
+ */
+
+/* ── Re-export everything from the agent stylesheet ── */
+@import './AgentCreateProduct.module.css';
+
+/* ── SME accent overrides ── */
+:local(.primaryButton) {
+  background: linear-gradient(135deg, #0f766e, #0d9488) !important;
+}
+
+:local(.primaryButton):hover:not(:disabled) {
+  background: linear-gradient(135deg, #0d9488, #14b8a6) !important;
+  box-shadow: 0 4px 15px rgba(15, 118, 110, 0.4) !important;
+}
+
+:local(.activeTab) {
+  color: #0f766e !important;
+  border-bottom-color: #0f766e !important;
+}
+
+:local(.categoryTag) {
+  background: #ccfbf1 !important;
+  border-color: #5eead4 !important;
+  color: #0f766e !important;
+}
+
+:local(.successAlert) {
+  background: linear-gradient(135deg, #f0fdf4, #ecfdf5) !important;
+  border-color: #6ee7b7 !important;
+}
+

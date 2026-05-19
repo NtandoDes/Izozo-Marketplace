@@ -1,0 +1,61 @@
+-- Users table
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    role ENUM('customer', 'sme', 'agent', 'delivery') NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    source VARCHAR(255),
+    status ENUM('pending', 'active', 'suspended') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SME profiles
+CREATE TABLE sme_profiles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    business_name VARCHAR(255) NOT NULL,
+    owner_name VARCHAR(255) NOT NULL,
+    business_type TEXT,
+    business_address TEXT,
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Agent profiles
+CREATE TABLE agent_profiles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    home_address TEXT NOT NULL,
+    has_internet BOOLEAN DEFAULT FALSE,
+    has_smartphone BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Delivery profiles
+CREATE TABLE delivery_profiles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    home_address TEXT NOT NULL,
+    vehicle_type VARCHAR(255),
+    has_internet BOOLEAN DEFAULT FALSE,
+    has_smartphone BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Registration logs
+CREATE TABLE registration_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    email VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    source VARCHAR(255),
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    status TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

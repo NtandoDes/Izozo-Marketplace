@@ -1,0 +1,50 @@
+<h2>Thank you for your order!</h2>
+
+<p>Your order has been successfully placed and paid.</p>
+
+<p>
+  <strong>Order Number:</strong> {{ order.order_number }}
+</p>
+
+<p>
+  <strong>Delivery Method:</strong>
+  {{ order.delivery_method }}
+</p>
+
+<p>
+  <strong>PAXI Tier:</strong>
+  {{ order.delivery_size_category }}
+</p>
+
+<hr>
+
+<h3>Order Items</h3>
+
+<table width="100%" cellspacing="0" cellpadding="8" border="1">
+  <tr>
+    <th>Product</th>
+    <th>Qty</th>
+    <th>Price</th>
+  </tr>
+
+  {% for item in items %}
+  <tr>
+    <td>{{ item.product_name }}</td>
+    <td>{{ item.quantity }}</td>
+    <td>R{{ item.unit_price }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<br>
+
+<h3>Total: R{{ order.total_amount }}</h3>
+
+<p>
+  Estimated Delivery:
+  {{ order.estimated_delivery_date }}
+</p>
+
+<p>
+  Thank you for shopping with Izozo.
+</p>

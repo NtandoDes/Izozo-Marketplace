@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Izozo Marketplace</title>
+    <script>
+      // Redirect clean URLs to hash URLs
+      (function() {
+        if (window.location.hash === '' && window.location.pathname !== '/') {
+          window.location.href = '/#' + window.location.pathname;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

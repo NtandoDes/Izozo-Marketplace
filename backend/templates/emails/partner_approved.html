@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>You're approved — Izozo Marketplace</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #faf9f8;
+      color: #2d1f1a;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrapper {
+      max-width: 580px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid #e5e1de;
+    }
+
+    /* Header */
+    .header {
+      background-color: #150c09;
+      padding: 40px 48px 36px;
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 800;
+      color: #f2c01a;
+      letter-spacing: -1px;
+      margin-bottom: 20px;
+      display: block;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #f2c01a;
+      color: #150c09;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 20px;
+      letter-spacing: 0.03em;
+    }
+
+    /* Body */
+    .body {
+      padding: 40px 48px;
+    }
+
+    .greeting {
+      font-size: 24px;
+      font-weight: 700;
+      color: #150c09;
+      margin-bottom: 16px;
+      line-height: 1.3;
+    }
+
+    .intro {
+      font-size: 16px;
+      color: #6b6461;
+      line-height: 1.65;
+      margin-bottom: 32px;
+    }
+
+    /* Approval box */
+    .approval-box {
+      background: #fffbea;
+      border: 1px solid rgba(242, 192, 26, 0.35);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    .approval-icon {
+      font-size: 40px;
+      display: block;
+      margin-bottom: 12px;
+    }
+
+    .approval-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #150c09;
+      margin-bottom: 6px;
+    }
+
+    .approval-sub {
+      font-size: 14px;
+      color: #6b6461;
+    }
+
+    /* Steps */
+    .steps-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #150c09;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 16px;
+    }
+
+    .steps {
+      list-style: none;
+      margin-bottom: 32px;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0ece9;
+    }
+
+    .step:last-child {
+      border-bottom: none;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #f2c01a;
+      color: #150c09;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      /* inline-block fallback for email clients */
+      text-align: center;
+      line-height: 28px;
+    }
+
+    .step-text {
+      font-size: 15px;
+      color: #3d2e29;
+      line-height: 1.5;
+      padding-top: 4px;
+    }
+
+    /* CTA button */
+    .cta-wrap {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .cta-btn {
+      display: inline-block;
+      background: #f2c01a;
+      color: #150c09;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 16px 40px;
+      border-radius: 12px;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+    }
+
+    .cta-hint {
+      font-size: 13px;
+      color: #b0a9a5;
+      margin-top: 10px;
+    }
+
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid #f0ece9;
+      margin: 0 0 28px;
+    }
+
+    /* Support note */
+    .support {
+      font-size: 14px;
+      color: #6b6461;
+      line-height: 1.6;
+    }
+
+    .support a {
+      color: #c0392b;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .footer {
+      background: #faf9f8;
+      border-top: 1px solid #e5e1de;
+      padding: 24px 48px;
+      text-align: center;
+    }
+
+    .footer p {
+      font-size: 12px;
+      color: #b0a9a5;
+      line-height: 1.6;
+    }
+
+    .footer a {
+      color: #b0a9a5;
+      text-decoration: underline;
+    }
+
+    /* Mobile */
+    @media (max-width: 600px) {
+      .wrapper { margin: 0; border-radius: 0; border: none; }
+      .header  { padding: 32px 24px 28px; }
+      .body    { padding: 32px 24px; }
+      .footer  { padding: 20px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- Header -->
+    <div class="header">
+      <span class="logo">Izozo</span>
+      <span class="badge">{{ role_label }} Account Approved</span>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <h1 class="greeting">Hi {{ full_name }}, you're in! 🎉</h1>
+      <p class="intro">
+        Your <strong>{{ role_label }}</strong> application has been reviewed and approved by
+        our team. Your Izozo account is now active and ready to go.
+      </p>
+
+      <!-- Approval confirmation box -->
+      <div class="approval-box">
+        <span class="approval-icon">✅</span>
+        <div class="approval-title">Account Active</div>
+        <div class="approval-sub">You can now log in and access your dashboard</div>
+      </div>
+
+      <!-- Next steps -->
+      <p class="steps-title">What's next</p>
+      <ul class="steps">
+        <li class="step">
+          <span class="step-num">1</span>
+          <span class="step-text">
+            <strong>Log in</strong> to your account using your email and password.
+          </span>
+        </li>
+        <li class="step">
+          <span class="step-num">2</span>
+          <span class="step-text">
+            <strong>Complete your profile</strong> — add any remaining details to get
+            set up fully on the platform.
+          </span>
+        </li>
+        <li class="step">
+          <span class="step-num">3</span>
+          <span class="step-text">
+            {% if role_label == 'Business Owner' %}
+              <strong>List your products</strong> and start selling through our agent network.
+            {% elif role_label == 'Sales Agent' %}
+              <strong>Browse available SMEs</strong> and start selling their products to earn commissions.
+            {% else %}
+              <strong>Set your delivery area</strong> and start picking up orders in your neighbourhood.
+            {% endif %}
+          </span>
+        </li>
+      </ul>
+
+      <!-- CTA -->
+      <div class="cta-wrap">
+        <a href="{{ login_url }}" class="cta-btn">Go to my dashboard →</a>
+        <p class="cta-hint">{{ login_url }}</p>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- Support -->
+      <p class="support">
+        Questions or need help getting started? Reply to this email or reach us at
+        <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+        We're happy to help.
+      </p>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>
+        You're receiving this because you registered as a {{ role_label }} on Izozo Marketplace.<br />
+        &copy; 2026 Izozo Marketplace &middot;
+        <a href="{{ frontend_url }}/privacy">Privacy Policy</a> &middot;
+        <a href="{{ frontend_url }}/terms">Terms of Service</a>
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
