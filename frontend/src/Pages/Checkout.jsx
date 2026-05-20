@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
@@ -991,49 +990,15 @@ export default function Checkout() {
               </div>
             )}
 
-            {/* Step 3 */}
-            {step === 3 && (
-              <div className={styles.checkoutStep}>
-                <h2 className={styles.stepTitle}>Order Review</h2>
-                <div className={styles.reviewSection}><h3>Shipping Details</h3><div className={styles.reviewDetails}>
-                  <p><strong>{shippingInfo.fullName}</strong></p><p>{shippingInfo.address}</p>
-                  <p>{shippingInfo.city}, {shippingInfo.province} {shippingInfo.postalCode}</p>
-                  <p>{shippingInfo.email} • {shippingInfo.phone}</p>
-                  <p><strong>Delivery:</strong> {selectedDelivery?`${selectedDelivery.label} — R${selectedDelivery.price.toFixed(2)} (${selectedDelivery.estimatedDays})`:"Not selected"}</p>
-                </div></div>
-                <div className={styles.reviewSection}><h3>Billing Details</h3><div className={styles.reviewDetails}>
-                  {billingInfo.sameAsShipping?<p>Same as shipping address</p>:<><p><strong>{billingInfo.fullName}</strong></p><p>{billingInfo.address}</p><p>{billingInfo.city}, {billingInfo.province}</p></>}
-                </div></div>
-                <div className={styles.reviewSection}><h3>Payment Method</h3><div className={styles.reviewDetails}>
-                  {savedMethodId?<p>💳 {savedPaymentMethods.find((m)=>m.id===savedMethodId)?.display_name}</p>:paymentMethod==="card"?<p>💳 Card payment via Paystack</p>:paymentMethod==="eft"?<p>🏦 EFT / Bank Transfer</p>:<p>💵 Cash on Delivery</p>}
-                </div></div>
-                <div className={styles.reviewSection}><h3>Order Items</h3>
-                  {cartItems.map((item)=>(
-                    <div key={item.id} className={styles.orderItem}>
-                      <span className={styles.itemName}>{item.product_name||item.name} × {item.quantity}</span>
-                      <span className={styles.itemPrice}>R{(item.price*item.quantity).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className={styles.termsSection}>
-                  <label className={styles.checkboxLabel}>
-                    <input type="checkbox" checked={agreeToTerms} onChange={(e)=>setAgreeToTerms(e.target.checked)} className={styles.checkbox} required/>
-                    <span>I agree to the <Link to="/terms">Terms & Conditions</Link> and confirm I have read the <Link to="/privacy">Privacy Policy</Link></span>
-                  </label>
-                </div>
-              </div>
-            )}
-
+          
             <div className={styles.stepNavigation}>
               {step>1 && <button className={`${styles.btn} ${styles.prevBtn}`} onClick={handlePrevStep} disabled={isLoading}>Back</button>}
-              {step<3
-                ? <button className={`${styles.btn} ${styles.nextBtn}`} onClick={handleNextStep} disabled={isLoading||(step===1&&enriching)}>
-                    {step===1&&enriching?"Loading delivery…":`Continue to ${step===1?"Payment":"Review"}`}
-                  </button>
-                : <button className={`${styles.btn} ${styles.placeOrderBtn}`} onClick={handlePlaceOrder} disabled={isLoading||!agreeToTerms}>
+              
+               
+                <button className={`${styles.btn} ${styles.placeOrderBtn}`} onClick={handlePlaceOrder} disabled={isLoading||!agreeToTerms}>
                     {isLoading?"Processing...":paymentMethod==="card"?"Place Order & Pay with Paystack":"Place Order"}
                   </button>
-              }
+              
             </div>
           </div>
 
