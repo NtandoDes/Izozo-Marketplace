@@ -11,54 +11,40 @@ from django.utils.text import slugify
 # ---------------------------------------------------------------------------
 
 COMMISSION_TYPE_CHOICES = (
-    ('small_items',      'Small Items (Clothing, accessories, jewellery)'),
-    ('medium_items',     'Medium Items (Boxed goods, shoes, electronics)'),
-    ('large_bulky',      'Large / Bulky Items (Furniture, bulk food, appliances)'),
-    ('perishable_food',  'Perishable Food (Fresh produce, dairy, meat, bakery)'),
+    ('hair_cosmetics',        'Hair, Hair Products and Cosmetics'),
+    ('clothing',              'Clothing'),
+    ('shoes',                 'Shoes'),
+    ('fragrances',            'Fragrances'),
+    ('local_handmade',        'Local Handmade Products'),
+    ('cleaning_products',     'Cleaning Products (SABS)'),
 )
 
-URGENCY_LEVEL_CHOICES = (
-    ('standard', 'Standard'),
-    ('priority', 'Priority (+R5)'),
-    ('express',  'Express (+R15)'),
-)
-
-# Base flat-rand commission per category
-COMMISSION_BASE = {
-    'small_items':     5,
-    'medium_items':    10,
-    'large_bulky':     20,
-    'perishable_food': 10,
+# Commission as a PERCENTAGE of selling price
+COMMISSION_RATES = {
+    'hair_cosmetics':     12,
+    'clothing':            5,
+    'shoes':              10,
+    'fragrances':         12,
+    'local_handmade':     15,
+    'cleaning_products':   8,
 }
 
-# Urgency surcharges (only applied to perishable_food)
-URGENCY_SURCHARGE = {
-    'standard': 0,
-    'priority': 5,
-    'express':  15,
-}
+# Categories where items are foldable/soft by nature (auto-tick foldable)
+FOLDABLE_CATEGORIES = {'clothing', 'hair_cosmetics'}
 
 
-def calculate_commission_rate(commission_type: str, urgency_level: str = 'standard') -> int:
+def calculate_commission_rate(commission_type: str) -> int:
     """
-    Return the flat-rand commission amount for a given commission_type
-    and (optional) urgency_level.
-
-    This is the canonical calculation used by both the model and the API view,
-    so frontend and backend always agree.
+    Return the percentage commission rate for a given commission_type.
 
     Examples
     --------
-    >>> calculate_commission_rate('small_items')
+    >>> calculate_commission_rate('clothing')
     5
-    >>> calculate_commission_rate('perishable_food', 'express')
-    25
+    >>> calculate_commission_rate('local_handmade')
+    15
     """
-    base = COMMISSION_BASE.get(commission_type, 0)
-    surcharge = 0
-    if commission_type == 'perishable_food':
-        surcharge = URGENCY_SURCHARGE.get(urgency_level, 0)
-    return base + surcharge
+    return COMMISSION_RATES.get(commission_type, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -72,13 +58,6 @@ class Product(models.Model):
         ('active',   'Active'),
         ('inactive', 'Inactive'),
         ('rejected', 'Rejected'),
-    )
-
-    PACKAGING_OVERRIDE_CHOICES = (
-        ('none',   'None (use dimensional logic)'),
-        ('small',  'Always Small'),
-        ('medium', 'Always Medium'),
-        ('large',  'Always Large'),
     )
 
     # ── Core ─────────────────────────────────────────────────────────────────
@@ -102,27 +81,17 @@ class Product(models.Model):
     selling_price       = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
 
-    # commission_rate stores the FLAT RAND AMOUNT (e.g. 5, 10, 20).
-    # Legacy rows created before the commission_type system will have the old
-    # percentage value; new rows always have a flat-rand value derived from
-    # commission_type + urgency_level via calculate_commission_rate().
-    commission_rate = models.DecimalField(max_digits=8, decimal_places=2, default=10)
+    # commission_rate stores the PERCENTAGE (e.g. 5 means 5%).
+    # The rand amount is derived at runtime via the commission_amount property.
+    commission_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
-    # ── NEW: Commission category & urgency ────────────────────────────────────
-    # commission_type drives the flat-rand commission amount.
-    # urgency_level adds a surcharge for perishable_food products only.
+    # commission_type drives the percentage commission rate.
     commission_type = models.CharField(
         max_length=30,
         choices=COMMISSION_TYPE_CHOICES,
         blank=True,
         default='',
-        help_text='Category that determines the flat-rand commission fee.',
-    )
-    urgency_level = models.CharField(
-        max_length=20,
-        choices=URGENCY_LEVEL_CHOICES,
-        default='standard',
-        help_text='Delivery urgency — only affects perishable_food commission.',
+        help_text='Category that determines the commission percentage.',
     )
 
     # ── Inventory ────────────────────────────────────────────────────────────
@@ -137,22 +106,14 @@ class Product(models.Model):
     height_cm = models.PositiveIntegerField()
     weight_kg = models.DecimalField(max_digits=5, decimal_places=2)
 
-    # Packaging behaviour
+    # Foldable flag — for clothing, hair products, and other soft/compressible
+    # items that always ship as a SMALL parcel regardless of unfolded dimensions.
     is_foldable = models.BooleanField(
         default=False,
         help_text=(
-            'Tick for clothing, fabric, or other soft items that can be '
-            'folded/compressed into a small parcel. '
-            'Forces delivery_size_category to SMALL unless packaging_override is set.'
-        ),
-    )
-    packaging_override = models.CharField(
-        max_length=10,
-        choices=PACKAGING_OVERRIDE_CHOICES,
-        default='none',
-        help_text=(
-            'Pin a specific PAXI size category, ignoring both dimensions and '
-            'the foldable flag. Leave as "none" to use automatic logic.'
+            'Tick for clothing, fabric, hair products, or other soft items '
+            'that can be folded/compressed into a small parcel. '
+            'Forces delivery_size_category to SMALL.'
         ),
     )
 
@@ -170,8 +131,8 @@ class Product(models.Model):
     meta_keywords    = models.CharField(max_length=255, blank=True, null=True)
 
     # ── Timestamps ───────────────────────────────────────────────────────────
-    created_at  = models.DateTimeField(default=timezone.now)
-    updated_at  = models.DateTimeField(auto_now=True)
+    created_at   = models.DateTimeField(default=timezone.now)
+    updated_at   = models.DateTimeField(auto_now=True)
     published_at = models.DateTimeField(blank=True, null=True)
 
     # ── Tracking ─────────────────────────────────────────────────────────────
@@ -192,7 +153,7 @@ class Product(models.Model):
             models.Index(fields=['sme', 'status']),
             models.Index(fields=['agent', 'created_at']),
             models.Index(fields=['slug']),
-            models.Index(fields=['commission_type']),  # new
+            models.Index(fields=['commission_type']),
         ]
 
     def __str__(self):
@@ -216,12 +177,13 @@ class Product(models.Model):
                     self.sku = candidate
                     break
 
-        # Derive commission_rate from commission_type when type is set.
-        # This keeps the stored number consistent with the category rules.
+        # Derive commission_rate (percentage) from commission_type.
         if self.commission_type:
-            self.commission_rate = calculate_commission_rate(
-                self.commission_type, self.urgency_level
-            )
+            self.commission_rate = calculate_commission_rate(self.commission_type)
+
+        # Auto-tick foldable for naturally soft categories.
+        if self.commission_type in FOLDABLE_CATEGORIES:
+            self.is_foldable = True
 
         # Selling price auto-calculation
         if not self.selling_price and self.discount_percentage > 0:
@@ -241,33 +203,31 @@ class Product(models.Model):
     def delivery_size_category(self):
         """
         PAXI size category. Priority order:
-          1. packaging_override (explicit pin — always wins)
-          2. is_foldable flag   (soft items → always SMALL)
-          3. Dimensional thresholds
+          1. is_foldable flag  → always SMALL
+          2. Dimensional thresholds
         """
-        if self.packaging_override != 'none':
-            return self.packaging_override.upper()
         if self.is_foldable:
             return 'SMALL'
         if self.volume_cm3 <= 3_000 and self.weight_kg <= 5:
             return 'SMALL'
         if self.volume_cm3 <= 8_000 and self.weight_kg <= 10:
-            return 'MEDIUM'
+            return 'LARGE'
         return 'LARGE'
 
     @property
     def commission_amount(self):
         """
-        Flat-rand commission on this product's selling price.
-        commission_rate IS the flat-rand amount (e.g. R10), not a percentage.
+        Commission charged on this product's selling price.
+        commission_rate is a PERCENTAGE, so we derive the rand amount here.
         """
-        return self.commission_rate
+        price = float(self.selling_price or self.base_price)
+        return round(price * float(self.commission_rate) / 100, 2)
 
     @property
     def net_payout(self):
         """Seller payout after commission deduction."""
-        price = self.selling_price or self.base_price
-        return price - self.commission_rate
+        price = float(self.selling_price or self.base_price)
+        return round(price - self.commission_amount, 2)
 
     def get_final_price(self):
         return self.selling_price or self.base_price
@@ -279,12 +239,12 @@ class Product(models.Model):
 # ── Unchanged supporting models ───────────────────────────────────────────────
 
 class ProductImage(models.Model):
-    product  = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
-    image    = models.ImageField(upload_to='products/')
-    alt_text = models.CharField(max_length=255, blank=True, null=True)
+    product     = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
+    image       = models.ImageField(upload_to='products/')
+    alt_text    = models.CharField(max_length=255, blank=True, null=True)
     is_featured = models.BooleanField(default=False)
-    order    = models.PositiveIntegerField(default=0)
-    created_at = models.DateTimeField(default=timezone.now)
+    order       = models.PositiveIntegerField(default=0)
+    created_at  = models.DateTimeField(default=timezone.now)
 
     class Meta:
         db_table = 'product_images'
@@ -321,7 +281,7 @@ class ProductAttribute(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'product_attributes'
+        db_table        = 'product_attributes'
         unique_together = ['product', 'attribute']
 
     def __str__(self):
@@ -341,8 +301,8 @@ class ProductReview(models.Model):
     created_at           = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        db_table       = 'product_reviews'
-        ordering       = ['-created_at']
+        db_table        = 'product_reviews'
+        ordering        = ['-created_at']
         unique_together = ['product', 'user']
 
     def __str__(self):

@@ -4,7 +4,8 @@ from django.utils.text import slugify
 from django.db.models import Avg, Count
 from .models import (
     Product, ProductImage, ProductVariant,
-    ProductAttribute, ProductReview
+    ProductAttribute, ProductReview,
+    COMMISSION_RATES,
 )
 from categories.serializers import CategorySerializer, CategoryAttributeSerializer
 from categories.models import CategoryAttribute
@@ -74,11 +75,11 @@ class ProductVariantCreateUpdateSerializer(serializers.ModelSerializer):
 # ============= PRODUCT ATTRIBUTE SERIALIZERS =============
 
 class ProductAttributeSerializer(serializers.ModelSerializer):
-    attribute_name = serializers.CharField(source='attribute.name', read_only=True)
-    attribute_type = serializers.CharField(source='attribute.attribute_type', read_only=True)
-    attribute_unit = serializers.CharField(source='attribute.unit', read_only=True)
-    attribute_options = serializers.JSONField(source='attribute.options', read_only=True)
-    display_value = serializers.SerializerMethodField()
+    attribute_name    = serializers.CharField(source='attribute.name',           read_only=True)
+    attribute_type    = serializers.CharField(source='attribute.attribute_type', read_only=True)
+    attribute_unit    = serializers.CharField(source='attribute.unit',           read_only=True)
+    attribute_options = serializers.JSONField(source='attribute.options',        read_only=True)
+    display_value     = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductAttribute
@@ -108,7 +109,7 @@ class ProductAttributeCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         attribute = data['attribute']
-        value = data['value']
+        value     = data['value']
         if attribute.attribute_type == 'number':
             try:
                 float(value)
@@ -135,8 +136,8 @@ class ProductAttributeCreateSerializer(serializers.ModelSerializer):
 # ============= PRODUCT REVIEW SERIALIZERS =============
 
 class ProductReviewSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.full_name', read_only=True)
-    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name      = serializers.CharField(source='user.full_name', read_only=True)
+    user_email     = serializers.EmailField(source='user.email',    read_only=True)
     formatted_date = serializers.SerializerMethodField()
 
     class Meta:
@@ -167,11 +168,11 @@ class ProductReviewCreateSerializer(serializers.ModelSerializer):
 
 class ProductDeliverySerializer(serializers.ModelSerializer):
     """
-    Exposes all PAXI / courier delivery sizing fields, including the new
-    packaging control fields (is_foldable, packaging_override) and the
-    computed read-only properties (volume_cm3, delivery_size_category).
+    Exposes PAXI delivery sizing fields and computed read-only properties.
+    packaging_override has been removed — only is_foldable controls
+    soft-item sizing.
     """
-    volume_cm3 = serializers.IntegerField(read_only=True)
+    volume_cm3             = serializers.IntegerField(read_only=True)
     delivery_size_category = serializers.CharField(read_only=True)
 
     class Meta:
@@ -180,7 +181,7 @@ class ProductDeliverySerializer(serializers.ModelSerializer):
             # Physical dimensions
             'length_cm', 'width_cm', 'height_cm', 'weight_kg',
             # Packaging control
-            'is_foldable', 'packaging_override',
+            'is_foldable',
             # Computed
             'volume_cm3', 'delivery_size_category',
         ]
@@ -189,20 +190,22 @@ class ProductDeliverySerializer(serializers.ModelSerializer):
 # ============= PRODUCT LIST SERIALIZER =============
 
 class ProductListSerializer(serializers.ModelSerializer):
-    sme_name = serializers.CharField(source='sme.business_name', read_only=True)
-    agent_name = serializers.CharField(source='agent.user.full_name', read_only=True)
-    agent_id = serializers.IntegerField(source='agent.id', read_only=True)
-    category_names = serializers.SerializerMethodField()
-    category_ids = serializers.SerializerMethodField()
-    featured_image = serializers.SerializerMethodField()
-    final_price = serializers.SerializerMethodField()
-    discount_percentage = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
-    is_low_stock = serializers.SerializerMethodField()
-    average_rating = serializers.SerializerMethodField()
-    review_count = serializers.SerializerMethodField()
-
+    sme_name               = serializers.CharField(source='sme.business_name',       read_only=True)
+    agent_name             = serializers.CharField(source='agent.user.full_name',     read_only=True)
+    agent_id               = serializers.IntegerField(source='agent.id',              read_only=True)
+    category_names         = serializers.SerializerMethodField()
+    category_ids           = serializers.SerializerMethodField()
+    featured_image         = serializers.SerializerMethodField()
+    final_price            = serializers.SerializerMethodField()
+    discount_percentage    = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    is_low_stock           = serializers.SerializerMethodField()
+    average_rating         = serializers.SerializerMethodField()
+    review_count           = serializers.SerializerMethodField()
+    # Computed commission breakdown
+    commission_amount      = serializers.SerializerMethodField()
+    net_payout             = serializers.SerializerMethodField()
     # Delivery / PAXI
-    volume_cm3 = serializers.IntegerField(read_only=True)
+    volume_cm3             = serializers.IntegerField(read_only=True)
     delivery_size_category = serializers.CharField(read_only=True)
 
     class Meta:
@@ -214,11 +217,13 @@ class ProductListSerializer(serializers.ModelSerializer):
             'base_price', 'selling_price', 'discount_percentage', 'final_price',
             'featured_image', 'stock_quantity', 'is_low_stock',
             'status', 'is_active', 'is_featured',
-            'commission_rate','commission_type','urgency_level',
+            # Commission
+            'commission_rate', 'commission_type',
+            'commission_amount', 'net_payout',
             'average_rating', 'review_count', 'created_at',
             # Delivery / PAXI
             'length_cm', 'width_cm', 'height_cm', 'weight_kg',
-            'is_foldable', 'packaging_override',
+            'is_foldable',
             'volume_cm3', 'delivery_size_category',
         ]
         read_only_fields = ['id', 'slug', 'created_at']
@@ -256,34 +261,39 @@ class ProductListSerializer(serializers.ModelSerializer):
     def get_review_count(self, obj):
         return obj.reviews.filter(is_approved=True).count()
 
+    def get_commission_amount(self, obj):
+        return obj.commission_amount
+
+    def get_net_payout(self, obj):
+        return obj.net_payout
+
 
 # ============= PRODUCT DETAIL SERIALIZER =============
 
 class ProductDetailSerializer(serializers.ModelSerializer):
-    images = ProductImageSerializer(many=True, read_only=True)
-    variants = serializers.SerializerMethodField()
-    attributes = serializers.SerializerMethodField()
-    reviews = serializers.SerializerMethodField()
-    categories = CategorySerializer(many=True, read_only=True)
-
-    sme_details = serializers.SerializerMethodField()
-    agent_details = serializers.SerializerMethodField()
-    created_by_details = UserSerializer(source='created_by', read_only=True)
+    images              = ProductImageSerializer(many=True, read_only=True)
+    variants            = serializers.SerializerMethodField()
+    attributes          = serializers.SerializerMethodField()
+    reviews             = serializers.SerializerMethodField()
+    categories          = CategorySerializer(many=True, read_only=True)
+    sme_details         = serializers.SerializerMethodField()
+    agent_details       = serializers.SerializerMethodField()
+    created_by_details  = UserSerializer(source='created_by',  read_only=True)
     approved_by_details = UserSerializer(source='approved_by', read_only=True)
-
-    final_price = serializers.SerializerMethodField()
-    discount_amount = serializers.SerializerMethodField()
-    is_low_stock = serializers.SerializerMethodField()
-    average_rating = serializers.SerializerMethodField()
-    review_count = serializers.SerializerMethodField()
+    final_price         = serializers.SerializerMethodField()
+    discount_amount     = serializers.SerializerMethodField()
+    is_low_stock        = serializers.SerializerMethodField()
+    average_rating      = serializers.SerializerMethodField()
+    review_count        = serializers.SerializerMethodField()
     rating_distribution = serializers.SerializerMethodField()
-
+    # Commission breakdown (read-only, derived from model properties)
+    commission_amount   = serializers.SerializerMethodField()
+    net_payout          = serializers.SerializerMethodField()
     # Delivery / PAXI
-    volume_cm3 = serializers.IntegerField(read_only=True)
+    volume_cm3             = serializers.IntegerField(read_only=True)
     delivery_size_category = serializers.CharField(read_only=True)
-
-    absolute_url = serializers.SerializerMethodField()
-    share_url = serializers.SerializerMethodField()
+    absolute_url        = serializers.SerializerMethodField()
+    share_url           = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -293,12 +303,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             'categories', 'created_by_details', 'approved_by_details',
             'images', 'featured_image', 'variants', 'attributes',
             'base_price', 'selling_price', 'discount_percentage',
-            'discount_amount', 'final_price', 'commission_rate',
-            'commission_type','urgency_level', 
+            'discount_amount', 'final_price',
+            # Commission — rate is %, amount and payout are derived rand values
+            'commission_rate', 'commission_type',
+            'commission_amount', 'net_payout',
             'sku', 'barcode', 'stock_quantity', 'low_stock_threshold', 'is_low_stock',
             # Delivery / PAXI
             'length_cm', 'width_cm', 'height_cm', 'weight_kg',
-            'is_foldable', 'packaging_override',
+            'is_foldable',
             'volume_cm3', 'delivery_size_category',
             'status', 'is_active', 'is_featured',
             'reviews', 'average_rating', 'review_count', 'rating_distribution',
@@ -352,7 +364,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         return obj.reviews.filter(is_approved=True).count()
 
     def get_rating_distribution(self, obj):
-        reviews = obj.reviews.filter(is_approved=True)
+        reviews      = obj.reviews.filter(is_approved=True)
         distribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
         for review in reviews:
             distribution[review.rating] += 1
@@ -360,10 +372,16 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         if total > 0:
             for rating in distribution:
                 distribution[rating] = {
-                    'count': distribution[rating],
+                    'count':      distribution[rating],
                     'percentage': round((distribution[rating] / total) * 100, 1),
                 }
         return distribution
+
+    def get_commission_amount(self, obj):
+        return obj.commission_amount
+
+    def get_net_payout(self, obj):
+        return obj.net_payout
 
     def get_absolute_url(self, obj):
         request = self.context.get('request')
@@ -378,18 +396,13 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 # ============= PRODUCT CREATE / UPDATE SERIALIZER =============
 
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
-    """
-    Used for DRF-serializer-based create/update flows.
-    The agent and SME view classes handle creation directly, but this
-    serializer is still available for admin tooling or alternative endpoints.
-    """
-    images = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
-    category_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=True)
-    attributes = serializers.JSONField(write_only=True, required=False)
-    variants = serializers.ListField(child=serializers.JSONField(), write_only=True, required=False)
+    images          = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
+    category_ids    = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=True)
+    attributes      = serializers.JSONField(write_only=True, required=False)
+    variants        = serializers.ListField(child=serializers.JSONField(), write_only=True, required=False)
     existing_images = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
-        help_text="IDs of images to keep when updating"
+        help_text="IDs of images to keep when updating",
     )
 
     class Meta:
@@ -398,10 +411,11 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             'name', 'description', 'short_description',
             'sme', 'agent', 'category_ids',
             'base_price', 'selling_price', 'discount_percentage', 'commission_rate',
+            'commission_type',
             'sku', 'barcode', 'stock_quantity', 'low_stock_threshold',
             # Delivery / PAXI
             'length_cm', 'width_cm', 'height_cm', 'weight_kg',
-            'is_foldable', 'packaging_override',
+            'is_foldable',
             'featured_image', 'images', 'existing_images',
             'attributes', 'variants',
             'meta_title', 'meta_description', 'meta_keywords',
@@ -429,66 +443,34 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Weight must be greater than 0")
         return value
 
-    def validate_packaging_override(self, value):
-        valid = ('none', 'small', 'medium', 'large')
-        if value not in valid:
+    def validate_commission_type(self, value):
+        if value and value not in COMMISSION_RATES:
             raise serializers.ValidationError(
-                f"Must be one of: {', '.join(valid)}"
+                f"Must be one of: {', '.join(COMMISSION_RATES.keys())}"
             )
         return value
-    
+
     def validate(self, data):
+        is_foldable = data.get('is_foldable', getattr(self.instance, 'is_foldable', False))
 
-        is_foldable = data.get(
-            'is_foldable',
-            getattr(self.instance, 'is_foldable', False)
-        )
-
-        packaging_override = data.get(
-            'packaging_override',
-            getattr(self.instance, 'packaging_override', 'none')
-        )
-
-        requires_dimensions = (
-            not is_foldable and packaging_override == 'none'
-        )
-
-        # Only validate dimensions for standard products
-        if requires_dimensions:
-            required_fields = [
-                'length_cm',
-                'width_cm',
-                'height_cm',
-                'weight_kg',
-            ]
-
+        # Dimensions required only when item is not foldable
+        if not is_foldable:
+            required_fields = ['length_cm', 'width_cm', 'height_cm', 'weight_kg']
             for field in required_fields:
-                value = data.get(field)
+                if data.get(field) is None:
+                    raise serializers.ValidationError({field: f'{field} is required'})
 
-                if value is None:
-                    raise serializers.ValidationError({
-                        field: f'{field} is required'
-                    })
-
-        base_price = data.get(
-            'base_price',
-            getattr(self.instance, 'base_price', 0)
-        )
-
+        base_price    = data.get('base_price',    getattr(self.instance, 'base_price', 0))
         selling_price = data.get('selling_price')
 
         if selling_price and selling_price > base_price:
-            raise serializers.ValidationError({
-                'selling_price':
-                'Selling price cannot be higher than base price'
-            })
+            raise serializers.ValidationError(
+                {'selling_price': 'Selling price cannot be higher than base price'}
+            )
 
         discount = data.get('discount_percentage', 0)
-
         if discount > 0 and not selling_price:
-            data['selling_price'] = round(
-                base_price * (1 - discount / 100), 2
-            )
+            data['selling_price'] = round(base_price * (1 - discount / 100), 2)
 
         return data
 
@@ -520,12 +502,9 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_commission_rate(self, value):
-    # Commission is a flat Rand amount, not a percentage   
-        if value < 0 :
+        if value < 0:
             raise serializers.ValidationError("Commission rate cannot be negative")
         return value
-    
-   
 
     def validate_sku(self, value):
         if value:
@@ -555,21 +534,20 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             if 'name' not in variant:
                 raise serializers.ValidationError("Each variant must have a name")
         return value
-    
+
     def create(self, validated_data):
-        request = self.context.get('request')
+        request      = self.context.get('request')
         category_ids = validated_data.pop('category_ids', [])
-        images_data = validated_data.pop('images', [])
+        images_data  = validated_data.pop('images', [])
         attributes_data = validated_data.pop('attributes', {})
-        variants_data = validated_data.pop('variants', [])
-        validated_data['status'] = 'draft'
+        variants_data   = validated_data.pop('variants', [])
+        validated_data['status']    = 'draft'
         validated_data['is_active'] = False
         if request and request.user:
             validated_data['created_by'] = request.user
         if 'name' in validated_data:
             base_slug = slugify(validated_data['name'])
-            slug = base_slug
-            counter = 1
+            slug, counter = base_slug, 1
             while Product.objects.filter(slug=slug).exists():
                 slug = f"{base_slug}-{counter}"
                 counter += 1
@@ -591,17 +569,16 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         return product
 
     def update(self, instance, validated_data):
-        category_ids = validated_data.pop('category_ids', None)
-        images_data = validated_data.pop('images', [])
+        category_ids    = validated_data.pop('category_ids', None)
+        images_data     = validated_data.pop('images', [])
         existing_images = validated_data.pop('existing_images', [])
         attributes_data = validated_data.pop('attributes', None)
-        variants_data = validated_data.pop('variants', None)
+        variants_data   = validated_data.pop('variants', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if 'name' in validated_data and validated_data['name'] != instance.name:
             base_slug = slugify(validated_data['name'])
-            slug = base_slug
-            counter = 1
+            slug, counter = base_slug, 1
             while Product.objects.filter(slug=slug).exclude(pk=instance.pk).exists():
                 slug = f"{base_slug}-{counter}"
                 counter += 1
@@ -645,14 +622,14 @@ class ProductStatusUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
-        request = self.context.get('request')
+        request    = self.context.get('request')
         old_status = instance.status
         new_status = validated_data.get('status', old_status)
         if new_status == 'active' and old_status != 'active':
-            validated_data['approved_by'] = request.user if request else None
-            validated_data['approved_at'] = timezone.now()
+            validated_data['approved_by']  = request.user if request else None
+            validated_data['approved_at']  = timezone.now()
             validated_data['published_at'] = timezone.now()
-            validated_data['is_active'] = True
+            validated_data['is_active']    = True
         if new_status in ('rejected', 'inactive'):
             validated_data['is_active'] = False
         if new_status == 'active':
@@ -664,7 +641,7 @@ class ProductStatusUpdateSerializer(serializers.ModelSerializer):
 
 class ProductBulkActionSerializer(serializers.Serializer):
     product_ids = serializers.ListField(child=serializers.IntegerField(), required=True)
-    action = serializers.ChoiceField(choices=['activate', 'deactivate', 'delete', 'pending'], required=True)
+    action      = serializers.ChoiceField(choices=['activate', 'deactivate', 'delete', 'pending'], required=True)
 
     def validate_product_ids(self, value):
         if not value:
@@ -679,7 +656,7 @@ class ProductBulkActionSerializer(serializers.Serializer):
 # ============= INVENTORY SERIALIZERS =============
 
 class InventoryUpdateSerializer(serializers.Serializer):
-    stock_quantity = serializers.IntegerField(min_value=0)
+    stock_quantity      = serializers.IntegerField(min_value=0)
     low_stock_threshold = serializers.IntegerField(min_value=1, required=False)
 
     def validate_stock_quantity(self, value):
@@ -690,13 +667,13 @@ class InventoryUpdateSerializer(serializers.Serializer):
 
 class StockAdjustmentSerializer(serializers.Serializer):
     ADJUSTMENT_TYPES = (
-        ('add', 'Add Stock'),
+        ('add',    'Add Stock'),
         ('remove', 'Remove Stock'),
-        ('set', 'Set Stock'),
+        ('set',    'Set Stock'),
     )
     adjustment_type = serializers.ChoiceField(choices=ADJUSTMENT_TYPES)
-    quantity = serializers.IntegerField()
-    reason = serializers.CharField(max_length=255, required=False)
+    quantity        = serializers.IntegerField()
+    reason          = serializers.CharField(max_length=255, required=False)
 
     def validate(self, data):
         if data['adjustment_type'] in ('add', 'remove') and data['quantity'] <= 0:
@@ -709,14 +686,16 @@ class StockAdjustmentSerializer(serializers.Serializer):
 # ============= EXPORT SERIALIZER =============
 
 class ProductExportSerializer(serializers.ModelSerializer):
-    sme_name = serializers.CharField(source='sme.business_name')
-    agent_name = serializers.CharField(source='agent.user.full_name', default='')
-    categories = serializers.SerializerMethodField()
-    final_price = serializers.SerializerMethodField()
-    image_count = serializers.SerializerMethodField()
-    review_count = serializers.SerializerMethodField()
-    average_rating = serializers.SerializerMethodField()
-    volume_cm3 = serializers.IntegerField(read_only=True)
+    sme_name               = serializers.CharField(source='sme.business_name')
+    agent_name             = serializers.CharField(source='agent.user.full_name', default='')
+    categories             = serializers.SerializerMethodField()
+    final_price            = serializers.SerializerMethodField()
+    commission_amount      = serializers.SerializerMethodField()
+    net_payout             = serializers.SerializerMethodField()
+    image_count            = serializers.SerializerMethodField()
+    review_count           = serializers.SerializerMethodField()
+    average_rating         = serializers.SerializerMethodField()
+    volume_cm3             = serializers.IntegerField(read_only=True)
     delivery_size_category = serializers.CharField(read_only=True)
 
     class Meta:
@@ -725,10 +704,11 @@ class ProductExportSerializer(serializers.ModelSerializer):
             'id', 'name', 'sku', 'barcode',
             'sme_name', 'agent_name', 'categories',
             'base_price', 'selling_price', 'discount_percentage', 'final_price',
+            'commission_rate', 'commission_type', 'commission_amount', 'net_payout',
             'stock_quantity', 'low_stock_threshold',
             # Delivery / PAXI
             'length_cm', 'width_cm', 'height_cm', 'weight_kg',
-            'is_foldable', 'packaging_override',
+            'is_foldable',
             'volume_cm3', 'delivery_size_category',
             'status', 'is_active', 'is_featured',
             'image_count', 'review_count', 'average_rating',
@@ -740,6 +720,12 @@ class ProductExportSerializer(serializers.ModelSerializer):
 
     def get_final_price(self, obj):
         return float(obj.get_final_price())
+
+    def get_commission_amount(self, obj):
+        return obj.commission_amount
+
+    def get_net_payout(self, obj):
+        return obj.net_payout
 
     def get_image_count(self, obj):
         return obj.images.count()
@@ -757,22 +743,22 @@ class ProductExportSerializer(serializers.ModelSerializer):
 # ============= DASHBOARD STATS SERIALIZERS =============
 
 class ProductStatsSerializer(serializers.Serializer):
-    total_products = serializers.IntegerField()
-    active_products = serializers.IntegerField()
+    total_products   = serializers.IntegerField()
+    active_products  = serializers.IntegerField()
     pending_products = serializers.IntegerField()
-    draft_products = serializers.IntegerField()
+    draft_products   = serializers.IntegerField()
     rejected_products = serializers.IntegerField()
-    out_of_stock = serializers.IntegerField()
-    low_stock = serializers.IntegerField()
-    total_value = serializers.DecimalField(max_digits=15, decimal_places=2)
-    average_price = serializers.DecimalField(max_digits=10, decimal_places=2)
-    top_categories = serializers.ListField(child=serializers.DictField())
-    recent_products = ProductListSerializer(many=True)
+    out_of_stock     = serializers.IntegerField()
+    low_stock        = serializers.IntegerField()
+    total_value      = serializers.DecimalField(max_digits=15, decimal_places=2)
+    average_price    = serializers.DecimalField(max_digits=10, decimal_places=2)
+    top_categories   = serializers.ListField(child=serializers.DictField())
+    recent_products  = ProductListSerializer(many=True)
 
 
 class AgentProductStatsSerializer(serializers.Serializer):
-    total_products = serializers.IntegerField()
+    total_products  = serializers.IntegerField()
     pending_approval = serializers.IntegerField()
-    approved = serializers.IntegerField()
-    rejected = serializers.IntegerField()
-    by_sme = serializers.ListField(child=serializers.DictField())
+    approved        = serializers.IntegerField()
+    rejected        = serializers.IntegerField()
+    by_sme          = serializers.ListField(child=serializers.DictField())
