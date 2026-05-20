@@ -172,7 +172,7 @@
   background: var(--gray-200); color: var(--gray-500);
 }
 .stepItem.active  .stepNum { background: var(--primary-yellow); color: var(--dark-brown); }
-.stepItem.done    .stepNum { background: var(--success-green);  color: #fff; }
+.stepItem.done    .stepNum { background: var(--primary-yellow);  color: #fff; }
 
 .stepLabel { font-size: 13px; font-weight: 400; color: var(--gray-700); }
 .stepItem.active .stepLabel { font-weight: 600; color: #92400e; }
@@ -188,7 +188,7 @@
   font-size: 11px; color: var(--gray-400); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;
 }
-.sidebarCommissionAmount { font-size: 22px; font-weight: 800; color: var(--success-green); }
+.sidebarCommissionAmount { font-size: 22px; font-weight: 800; color: var(--primary-yellow); }
 .sidebarCommissionType   { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
 .sidebarCommissionPayout {
   margin-top: 6px; font-size: 12px; color: var(--gray-700);
@@ -530,13 +530,13 @@
 
 .btnSubmit {
   padding: 10px 28px;
-  background: var(--success-green); color: #fff;
+  background: var(--primary-yellow); color: #090000;
   border: none; border-radius: 8px;
   font-size: 15px; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; gap: 8px;
   transition: var(--transition);
 }
-.btnSubmit:hover:not(:disabled) { background: #15803d; }
+.btnSubmit:hover:not(:disabled) { background: #f6f7f6; }
 .btnSubmit:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btnDanger {
