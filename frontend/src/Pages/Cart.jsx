@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
@@ -140,9 +139,9 @@ export default function Cart() {
   };
 
   // Handle view product
-  const handleViewProduct = (productId, slug) => {
-    navigate(`/product/${slug || productId}`);
-  };
+  const handleViewProduct = (productId) => {
+      navigate(`/product/${productId}`);
+    };
 
   // Handle add to cart from recommendations
   const handleAddToCart = async (product, e) => {
@@ -203,7 +202,7 @@ export default function Cart() {
                   <div 
                     key={product.id} 
                     className={styles.recommendedCard}
-                    onClick={() => handleViewProduct(product.id, product.slug)}
+                    onClick={() => handleViewProduct(product.id)}
                   >
                     <div className={styles.recommendedImage}>
                       <img 
@@ -290,7 +289,7 @@ export default function Cart() {
                 <div className={styles.itemDetails}>
                   <div className={styles.itemHeader}>
                     <h3 className={styles.itemName}>
-                      <Link to={`/product/${item.product_slug || item.product_id || item.id}`}>
+                      <Link to={`/product/${item.product_id || item.id}`}>
                         {item.product_name || item.name}
                       </Link>
                     </h3>

@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
@@ -51,25 +50,27 @@ export default function ProductDetails() {
 
 
   // ── Build cart item — includes ALL product fields so dimensions are stored ──
-  const buildCartItem = (p, qty = quantity) => ({
-    id:              p.id,
-    product_id:      p.id,
-    name:            p.name,
-    product_name:    p.name,
-    price:           p.selling_price || p.base_price,
-    originalPrice:   p.base_price,
-    image:           p.featured_image || productPlaceholder,
-    sme_id:          p.sme || p.sme_id || null,
-    commission_rate: p.commission_rate || p.commissionRate || 0,
-    sku:             p.sku || "",
-    seller:          p.sme_name || "",
-    slug:            p.slug || "",
-    // ── PAXI delivery dimensions ─────────────────────────────────────────────
-    length_cm:       p.length_cm  ?? null,
-    width_cm:        p.width_cm   ?? null,
-    height_cm:       p.height_cm  ?? null,
-    weight_kg:       p.weight_kg  ?? null,
-  });
+ const buildCartItem = (p, qty = quantity) => ({
+  id:              p.id,
+  product_id:      p.id,
+  name:            p.name,
+  product_name:    p.name,       
+  price:           p.selling_price || p.base_price,
+  originalPrice:   p.base_price,
+  image:           p.featured_image || productPlaceholder,
+  product_slug:    p.slug || String(p.id), 
+  slug:            p.slug || "",
+  sme_id:          p.sme || p.sme_id || null,
+  sme_name:        p.sme_name || "",        
+  commission_rate: p.commission_rate || p.commissionRate || 0,
+  sku:             p.sku || "",
+  seller:          p.sme_name || "",
+  // PAXI dimensions
+  length_cm:       p.length_cm  ?? null,
+  width_cm:        p.width_cm   ?? null,
+  height_cm:       p.height_cm  ?? null,
+  weight_kg:       p.weight_kg  ?? null,
+});
 
   
 

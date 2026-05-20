@@ -874,9 +874,12 @@ class PublicProductListView(APIView):
 class PublicProductDetailView(APIView):
     permission_classes = []
 
-    def get(self, request, slug):
+    def get(self, request, slug=None, pk=None):
         try:
-            product = Product.objects.get(slug=slug, status='active', is_active=True)
+            if pk:
+                product = Product.objects.get(pk=pk, status='active', is_active=True)
+            else:
+                product = Product.objects.get(slug=slug, status='active', is_active=True)
             return Response(ProductDetailSerializer(product, context={'request': request}).data)
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)

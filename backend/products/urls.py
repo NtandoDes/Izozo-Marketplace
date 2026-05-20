@@ -23,9 +23,10 @@ urlpatterns = [
     # ── Cart ─────────────────────────────────────────────────────────────────
     path('cart/validate-sme/',CartSMEValidationView.as_view(),  name='cart-validate-sme'),
 
-    # ── Public endpoints (customers) ─────────────────────────────────────────
-    path('products/', PublicProductListView.as_view(),  name='public-product-list'),
-    path('products/<slug:slug>/',PublicProductDetailView.as_view(), name='public-product-detail'),
+    # Public endpoints (customers)
+    path('products/', PublicProductListView.as_view(), name='public-product-list'),
+    path('products/<int:pk>/', PublicProductDetailView.as_view(), name='public-product-detail-by-id'),  # ← ADD THIS
+    path('products/<slug:slug>/', PublicProductDetailView.as_view(), name='public-product-detail'),
     path('products/<int:product_id>/reviews/', ProductReviewCreateView.as_view(), name='product-review-create'),
     path('products/<int:pk>/delivery/', ProductDeliveryDetailView.as_view(), name='public-product-delivery'),
 
