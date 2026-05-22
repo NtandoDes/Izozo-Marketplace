@@ -2,7 +2,7 @@
 import axios from "axios";
 
 // eslint-disable-next-line no-undef
-const API_URL = "https://izozo.izozo.co.za/api";
+const API_URL = "http://localhost:8000/api";
 
 const getAuthHeader = () => {
   const tokens = localStorage.getItem("izozo_tokens");
@@ -162,9 +162,6 @@ export const smeService = {
       if (filters.status) params.append("status", filters.status);
       if (filters.limit)  params.append("limit",  filters.limit);
       if (filters.search) params.append("search", filters.search);
-      if (filters.agent_id) params.append("agent_id", filters.agent_id);
-      if (filters.is_active !== undefined) params.append("is_active", filters.is_active);
-      if (filters.delivery_size_category) params.append("delivery_size_category", filters.delivery_size_category);
 
       const response = await axiosInstance.get(`/sme/products/?${params.toString()}`);
       console.log("📦 Products fetched:", response.data.length);
@@ -269,10 +266,10 @@ export const smeService = {
 
       // ── JSON sub-fields ─────────────────────────────────────────────────
       if (productData.attributes && Object.keys(productData.attributes).length > 0) {
-        formData.append("attributes", JSON.stringify(productData.attributes));
+        formData.append('attributes', JSON.stringify(submitData.attributes ?? {}));
       }
       if (productData.variants && productData.variants.length > 0) {
-        formData.append("variants", JSON.stringify(productData.variants));
+        formData.append('variants', JSON.stringify(submitData.variants ?? []));
       }
 
       // ── Images ──────────────────────────────────────────────────────────
@@ -312,7 +309,6 @@ export const smeService = {
     try {
       const formData = new FormData();
 
-      // Scalar fields
       const scalarFields = [
         "name", "description", "short_description",
         "base_price", "selling_price", "discount_percentage", "commission_rate",
@@ -321,59 +317,26 @@ export const smeService = {
         "packaging_override",
       ];
       scalarFields.forEach((field) => {
-        if (productData[field] !== null && productData[field] !== undefined && productData[field] !== "") {
+        if (productData[field] !== null && productData[field] !== undefined) {
           formData.append(field, productData[field]);
         }
       });
 
-      // Boolean field
       if (productData.is_foldable !== undefined) {
         formData.append("is_foldable", productData.is_foldable ? "true" : "false");
       }
 
-      // Category IDs (if provided)
-      if (Array.isArray(productData.category_ids) && productData.category_ids.length > 0) {
-        productData.category_ids.forEach((id) => formData.append("category_ids", id));
-      }
-
-      // JSON sub-fields (if provided)
-      if (productData.attributes && Object.keys(productData.attributes).length > 0) {
-        formData.append("attributes", JSON.stringify(productData.attributes));
-      }
-      if (productData.variants && productData.variants.length > 0) {
-        formData.append("variants", JSON.stringify(productData.variants));
-      }
-
-      // Images
       if (productData.featured_image instanceof File) {
         formData.append("featured_image", productData.featured_image);
-      }
-      if (Array.isArray(productData.images)) {
-        productData.images.forEach((img) => {
-          if (img instanceof File) formData.append("images", img);
-        });
-      }
-
-      // Existing images to keep (IDs)
-      if (Array.isArray(productData.existing_images)) {
-        productData.existing_images.forEach((id) => formData.append("existing_images", id));
       }
 
       const response = await axiosInstance.put(`/sme/products/${productId}/`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      
-      console.log("✅ Product updated:", response.data);
       return response.data;
     } catch (error) {
-      console.error("Error updating product:", error);
-      const errData = error.response?.data;
-      if (errData && typeof errData === "object") {
-        const enhanced = new Error(errData.error || errData.detail || "Failed to update product");
-        enhanced.field_errors = errData;
-        throw enhanced;
-      }
-      throw errData || error.message;
+      console.error("Error updating SME product:", error);
+      throw error.response?.data || error.message;
     }
   },
 
@@ -381,14 +344,9 @@ export const smeService = {
    * Update product status.
    * PATCH /api/sme/products/{id}/status/
    */
-  updateProductStatus: async (productId, status, rejectionReason = null) => {
+  updateProductStatus: async (productId, status) => {
     try {
-      const data = { status };
-      if (rejectionReason && status === 'rejected') {
-        data.rejection_reason = rejectionReason;
-      }
-      const response = await axiosInstance.patch(`/sme/products/${productId}/status/`, data);
-      console.log("✅ Product status updated:", response.data);
+      const response = await axiosInstance.patch(`/sme/products/${productId}/status/`, { status });
       return response.data;
     } catch (error) {
       console.error("Error updating product status:", error);
@@ -403,38 +361,9 @@ export const smeService = {
   deleteProduct: async (productId) => {
     try {
       const response = await axiosInstance.delete(`/sme/products/${productId}/`);
-      console.log("✅ Product deleted:", response.data);
       return response.data;
     } catch (error) {
       console.error("Error deleting product:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  /**
-   * Get product delivery details (PAXI sizing)
-   * GET /api/sme/products/{id}/delivery/
-   */
-  getProductDeliveryDetails: async (productId) => {
-    try {
-      const response = await axiosInstance.get(`/sme/products/${productId}/delivery/`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching product delivery details:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  /**
-   * Update product delivery details
-   * PUT /api/sme/products/{id}/delivery/
-   */
-  updateProductDeliveryDetails: async (productId, deliveryData) => {
-    try {
-      const response = await axiosInstance.put(`/sme/products/${productId}/delivery/`, deliveryData);
-      return response.data;
-    } catch (error) {
-      console.error("Error updating product delivery details:", error);
       throw error.response?.data || error.message;
     }
   },
@@ -461,7 +390,6 @@ export const smeService = {
       if (filters.limit)      params.append("limit",      filters.limit);
       if (filters.start_date) params.append("start_date", filters.start_date);
       if (filters.end_date)   params.append("end_date",   filters.end_date);
-      if (filters.agent_id)   params.append("agent_id",   filters.agent_id);
 
       const response = await axiosInstance.get(`/sme/orders/?${params.toString()}`);
       console.log("📦 Orders fetched:", response.data.length);
@@ -600,184 +528,6 @@ export const smeService = {
       console.error("Error fetching dashboard stats:", error);
       throw error;
     }
-  },
-
-  // ============= BULK OPERATIONS =============
-  
-  /**
-   * Bulk update product status
-   * POST /api/sme/products/bulk-action/
-   */
-  bulkUpdateProducts: async (productIds, action) => {
-    try {
-      const response = await axiosInstance.post("/sme/products/bulk-action/", {
-        product_ids: productIds,
-        action: action
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error performing bulk action:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  /**
-   * Bulk delete products
-   */
-  bulkDeleteProducts: async (productIds) => {
-    return smeService.bulkUpdateProducts(productIds, 'delete');
-  },
-
-  /**
-   * Bulk activate products
-   */
-  bulkActivateProducts: async (productIds) => {
-    return smeService.bulkUpdateProducts(productIds, 'activate');
-  },
-
-  /**
-   * Bulk deactivate products
-   */
-  bulkDeactivateProducts: async (productIds) => {
-    return smeService.bulkUpdateProducts(productIds, 'deactivate');
-  },
-
-  // ============= EXPORT FUNCTIONS =============
-  
-  /**
-   * Export products to CSV
-   * GET /api/sme/products/export/
-   */
-  exportProducts: async (filters = {}) => {
-    try {
-      const params = new URLSearchParams();
-      if (filters.status) params.append("status", filters.status);
-      if (filters.format) params.append("format", filters.format);
-      
-      const response = await axiosInstance.get(`/sme/products/export/?${params.toString()}`, {
-        responseType: 'blob'
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error exporting products:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  // ============= REVIEW MANAGEMENT =============
-  
-  /**
-   * Get product reviews
-   * GET /api/sme/products/{id}/reviews/
-   */
-  getProductReviews: async (productId, filters = {}) => {
-    try {
-      const params = new URLSearchParams();
-      if (filters.limit) params.append("limit", filters.limit);
-      if (filters.rating) params.append("rating", filters.rating);
-      
-      const response = await axiosInstance.get(`/sme/products/${productId}/reviews/?${params.toString()}`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching product reviews:", error);
-      return [];
-    }
-  },
-
-  /**
-   * Reply to a product review
-   * POST /api/sme/products/reviews/{reviewId}/reply/
-   */
-  replyToReview: async (reviewId, replyText) => {
-    try {
-      const response = await axiosInstance.post(`/sme/products/reviews/${reviewId}/reply/`, {
-        reply: replyText
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error replying to review:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  // ============= INVENTORY MANAGEMENT =============
-  
-  /**
-   * Update inventory for multiple products
-   * POST /api/sme/products/inventory/batch-update/
-   */
-  batchUpdateInventory: async (updates) => {
-    try {
-      const response = await axiosInstance.post("/sme/products/inventory/batch-update/", {
-        updates: updates
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error batch updating inventory:", error);
-      throw error.response?.data || error.message;
-    }
-  },
-
-  /**
-   * Get low stock products
-   */
-  getLowStockProducts: async () => {
-    try {
-      const products = await smeService.getProducts({ limit: 1000 });
-      return products.filter(p => p.stock_quantity > 0 && p.stock_quantity <= (p.low_stock_threshold || 5));
-    } catch (error) {
-      console.error("Error fetching low stock products:", error);
-      return [];
-    }
-  },
-
-  /**
-   * Get out of stock products
-   */
-  getOutOfStockProducts: async () => {
-    try {
-      const products = await smeService.getProducts({ limit: 1000 });
-      return products.filter(p => p.stock_quantity === 0);
-    } catch (error) {
-      console.error("Error fetching out of stock products:", error);
-      return [];
-    }
-  },
-
-  // ============= HELPER FUNCTIONS =============
-  
-  /**
-   * Format product data for API submission
-   */
-  formatProductForSubmission: (formData) => {
-    const formatted = {
-      name: formData.name,
-      description: formData.description,
-      short_description: formData.short_description || "",
-      base_price: parseFloat(formData.base_price),
-      discount_percentage: parseFloat(formData.discount_percentage) || 0,
-      stock_quantity: parseInt(formData.stock_quantity) || 0,
-      low_stock_threshold: parseInt(formData.low_stock_threshold) || 5,
-      sku: formData.sku || "",
-      barcode: formData.barcode || "",
-      length_cm: parseInt(formData.length_cm) || 1,
-      width_cm: parseInt(formData.width_cm) || 1,
-      height_cm: parseInt(formData.height_cm) || 1,
-      weight_kg: parseFloat(formData.weight_kg) || 0.1,
-      is_foldable: formData.is_foldable === true,
-      packaging_override: formData.packaging_override || "none",
-      category_ids: formData.category_ids || [],
-    };
-    
-    if (formData.selling_price) {
-      formatted.selling_price = parseFloat(formData.selling_price);
-    }
-    
-    if (formData.commission_rate) {
-      formatted.commission_rate = parseFloat(formData.commission_rate);
-    }
-    
-    return formatted;
   },
 };
 

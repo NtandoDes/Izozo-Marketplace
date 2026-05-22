@@ -424,24 +424,25 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     # ---- delivery field validators ----------------------------------------
 
     def validate_length_cm(self, value):
-        if value <= 0:
+        if value is not None and value <= 0:
             raise serializers.ValidationError("Length must be greater than 0")
         return value
-
+ 
     def validate_width_cm(self, value):
-        if value <= 0:
+        if value is not None and value <= 0:
             raise serializers.ValidationError("Width must be greater than 0")
         return value
-
+    
     def validate_height_cm(self, value):
-        if value <= 0:
+        if value is not None and value <= 0:
             raise serializers.ValidationError("Height must be greater than 0")
         return value
-
+    
     def validate_weight_kg(self, value):
-        if value <= 0:
+        if value is not None and value <= 0:
             raise serializers.ValidationError("Weight must be greater than 0")
         return value
+ 
 
     def validate_commission_type(self, value):
         if value and value not in COMMISSION_RATES:
@@ -560,7 +561,7 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         if attributes_data and product.categories.exists():
             for attr_id, value in attributes_data.items():
                 try:
-                    attribute = CategoryAttribute.objects.get(id=attr_id, category__in=product.categories.all())
+                    attribute = CategoryAttribute.objects.get(id=int(attr_id), category__in=product.categories.all())
                     ProductAttribute.objects.create(product=product, attribute=attribute, value=value)
                 except CategoryAttribute.DoesNotExist:
                     pass

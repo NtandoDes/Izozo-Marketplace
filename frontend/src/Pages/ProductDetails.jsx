@@ -28,6 +28,7 @@ export default function ProductDetails() {
       setIsLoading(true);
       setError(null);
       const productData = await productsService.getProduct(id);
+      console.log(productData.is_foldable)
       setProduct(productData);
 
       if (productData.colors?.length > 0) {
@@ -49,27 +50,30 @@ export default function ProductDetails() {
   };
 
 
-  // ── Build cart item — includes ALL product fields so dimensions are stored ──
- const buildCartItem = (p, qty = quantity) => ({
+  // ── Build cart item — includes ALL product fields so dimensions are stored ─
+
+const buildCartItem = (p, qty = quantity) => ({
   id:              p.id,
   product_id:      p.id,
   name:            p.name,
-  product_name:    p.name,       
+  product_name:    p.name,
   price:           p.selling_price || p.base_price,
   originalPrice:   p.base_price,
   image:           p.featured_image || productPlaceholder,
-  product_slug:    p.slug || String(p.id), 
+  product_slug:    p.slug || String(p.id),
   slug:            p.slug || "",
   sme_id:          p.sme || p.sme_id || null,
-  sme_name:        p.sme_name || "",        
+  sme_name:        p.sme_name || "",
   commission_rate: p.commission_rate || p.commissionRate || 0,
+  commission_type: p.commission_type || "",   // needed for foldable volume estimation
   sku:             p.sku || "",
   seller:          p.sme_name || "",
   // PAXI dimensions
-  length_cm:       p.length_cm  ?? null,
-  width_cm:        p.width_cm   ?? null,
-  height_cm:       p.height_cm  ?? null,
-  weight_kg:       p.weight_kg  ?? null,
+  length_cm:       p.length_cm   ?? null,
+  width_cm:        p.width_cm    ?? null,
+  height_cm:       p.height_cm   ?? null,
+  weight_kg:       p.weight_kg   ?? null,
+  is_foldable:     p.is_foldable ?? false,    // ← THIS WAS MISSING
 });
 
   

@@ -11,22 +11,22 @@ from django.utils.text import slugify
 # ---------------------------------------------------------------------------
 
 COMMISSION_TYPE_CHOICES = (
-    ('hair_cosmetics',        'Hair, Hair Products and Cosmetics'),
-    ('clothing',              'Clothing'),
-    ('shoes',                 'Shoes'),
-    ('fragrances',            'Fragrances'),
-    ('local_handmade',        'Local Handmade Products'),
-    ('cleaning_products',     'Cleaning Products (SABS)'),
+    ('hair_cosmetics',    'Hair, Hair Products and Cosmetics'),
+    ('clothing',          'Clothing'),
+    ('shoes',             'Shoes'),
+    ('fragrances',        'Fragrances'),
+    ('local_handmade',    'Local Handmade Products'),
+    ('cleaning_products', 'Cleaning Products (SABS)'),
 )
 
 # Commission as a PERCENTAGE of selling price
 COMMISSION_RATES = {
-    'hair_cosmetics':     12,
-    'clothing':            5,
-    'shoes':              10,
-    'fragrances':         12,
-    'local_handmade':     15,
-    'cleaning_products':   8,
+    'hair_cosmetics':    12,
+    'clothing':           5,
+    'shoes':             10,
+    'fragrances':        12,
+    'local_handmade':    15,
+    'cleaning_products':  8,
 }
 
 # Categories where items are foldable/soft by nature (auto-tick foldable)
@@ -34,16 +34,6 @@ FOLDABLE_CATEGORIES = {'clothing', 'hair_cosmetics'}
 
 
 def calculate_commission_rate(commission_type: str) -> int:
-    """
-    Return the percentage commission rate for a given commission_type.
-
-    Examples
-    --------
-    >>> calculate_commission_rate('clothing')
-    5
-    >>> calculate_commission_rate('local_handmade')
-    15
-    """
     return COMMISSION_RATES.get(commission_type, 0)
 
 
@@ -60,7 +50,7 @@ class Product(models.Model):
         ('rejected', 'Rejected'),
     )
 
-    # ── Core ─────────────────────────────────────────────────────────────────
+    # ── Core ──────────────────────────────────────────────────────────────────
     name              = models.CharField(max_length=255)
     slug              = models.SlugField(max_length=255, blank=True)
     description       = models.TextField()
@@ -81,61 +71,58 @@ class Product(models.Model):
     selling_price       = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
 
-    # commission_rate stores the PERCENTAGE (e.g. 5 means 5%).
-    # The rand amount is derived at runtime via the commission_amount property.
     commission_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-
-    # commission_type drives the percentage commission rate.
     commission_type = models.CharField(
-        max_length=30,
-        choices=COMMISSION_TYPE_CHOICES,
-        blank=True,
-        default='',
+        max_length=30, choices=COMMISSION_TYPE_CHOICES, blank=True, default='',
         help_text='Category that determines the commission percentage.',
     )
 
-    # ── Inventory ────────────────────────────────────────────────────────────
+    # ── Inventory ─────────────────────────────────────────────────────────────
     sku                 = models.CharField(max_length=100, unique=True, blank=True, null=True)
     barcode             = models.CharField(max_length=100, blank=True, null=True)
     stock_quantity      = models.PositiveIntegerField(default=0)
     low_stock_threshold = models.PositiveIntegerField(default=5)
 
     # ── Delivery sizing (PAXI / courier) ──────────────────────────────────────
-    length_cm = models.PositiveIntegerField()
-    width_cm  = models.PositiveIntegerField()
-    height_cm = models.PositiveIntegerField()
-    weight_kg = models.DecimalField(max_digits=5, decimal_places=2)
+    #
+    # NULL is allowed for foldable items — they have no meaningful physical
+    # dimensions (a folded hoodie isn't 60×40×30 cm). The frontend uses
+    # estimateFoldableVolume() based on product name for PAXI tier calculation.
+    # weight_kg is still stored when provided — it contributes to the 5 kg
+    # weight limit even for foldable items at high quantities.
+    length_cm = models.PositiveIntegerField(null=True, blank=True)
+    width_cm  = models.PositiveIntegerField(null=True, blank=True)
+    height_cm = models.PositiveIntegerField(null=True, blank=True)
+    weight_kg = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
-    # Foldable flag — for clothing, hair products, and other soft/compressible
-    # items that always ship as a SMALL parcel regardless of unfolded dimensions.
     is_foldable = models.BooleanField(
         default=False,
         help_text=(
             'Tick for clothing, fabric, hair products, or other soft items '
-            'that can be folded/compressed into a small parcel. '
-            'Forces delivery_size_category to SMALL.'
+            'that can be folded/compressed. Frontend uses estimated compressed '
+            'volume for PAXI tier calculation instead of physical dimensions.'
         ),
     )
 
-    # ── Media ────────────────────────────────────────────────────────────────
+    # ── Media ─────────────────────────────────────────────────────────────────
     featured_image = models.ImageField(upload_to='products/featured/', blank=True, null=True)
 
-    # ── Status ───────────────────────────────────────────────────────────────
+    # ── Status ────────────────────────────────────────────────────────────────
     status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     is_featured = models.BooleanField(default=False)
     is_active   = models.BooleanField(default=False)
 
-    # ── SEO ──────────────────────────────────────────────────────────────────
+    # ── SEO ───────────────────────────────────────────────────────────────────
     meta_title       = models.CharField(max_length=255, blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
     meta_keywords    = models.CharField(max_length=255, blank=True, null=True)
 
-    # ── Timestamps ───────────────────────────────────────────────────────────
+    # ── Timestamps ────────────────────────────────────────────────────────────
     created_at   = models.DateTimeField(default=timezone.now)
     updated_at   = models.DateTimeField(auto_now=True)
     published_at = models.DateTimeField(blank=True, null=True)
 
-    # ── Tracking ─────────────────────────────────────────────────────────────
+    # ── Tracking ──────────────────────────────────────────────────────────────
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, related_name='products_created',
@@ -148,8 +135,8 @@ class Product(models.Model):
 
     class Meta:
         db_table = 'products'
-        ordering  = ['-created_at']
-        indexes   = [
+        ordering = ['-created_at']
+        indexes  = [
             models.Index(fields=['sme', 'status']),
             models.Index(fields=['agent', 'created_at']),
             models.Index(fields=['slug']),
@@ -177,11 +164,11 @@ class Product(models.Model):
                     self.sku = candidate
                     break
 
-        # Derive commission_rate (percentage) from commission_type.
+        # Derive commission_rate (percentage) from commission_type
         if self.commission_type:
             self.commission_rate = calculate_commission_rate(self.commission_type)
 
-        # Auto-tick foldable for naturally soft categories.
+        # Auto-tick foldable for naturally soft categories
         if self.commission_type in FOLDABLE_CATEGORIES:
             self.is_foldable = True
 
@@ -193,39 +180,41 @@ class Product(models.Model):
 
         super().save(*args, **kwargs)
 
-    # ── Properties ───────────────────────────────────────────────────────────
+    # ── Properties ────────────────────────────────────────────────────────────
 
     @property
     def volume_cm3(self):
+        """
+        Physical volume. Returns 0 for foldable items (dimensions are NULL).
+        The frontend uses estimateFoldableVolume() for PAXI tier logic instead.
+        """
+        if self.length_cm is None or self.width_cm is None or self.height_cm is None:
+            return 0
         return self.length_cm * self.width_cm * self.height_cm
 
     @property
     def delivery_size_category(self):
-        """
-        PAXI size category. Priority order:
-          1. is_foldable flag  → always SMALL
-          2. Dimensional thresholds
-        """
         if self.is_foldable:
+            return 'SMALL'  # always SMALL per unit; multi-qty handled on frontend
+
+        kg  = float(self.weight_kg) if self.weight_kg is not None else 0
+        vol = self.volume_cm3
+
+        if vol == 0:
+            return None  # dimensions not set, can't determine
+        if vol <= 3_000 and kg <= 5:
             return 'SMALL'
-        if self.volume_cm3 <= 3_000 and self.weight_kg <= 5:
-            return 'SMALL'
-        if self.volume_cm3 <= 8_000 and self.weight_kg <= 10:
+        if vol <= 8_000 and kg <= 10:
             return 'LARGE'
-        return 'LARGE'
+        return None  # exceeds PAXI limits
 
     @property
     def commission_amount(self):
-        """
-        Commission charged on this product's selling price.
-        commission_rate is a PERCENTAGE, so we derive the rand amount here.
-        """
         price = float(self.selling_price or self.base_price)
         return round(price * float(self.commission_rate) / 100, 2)
 
     @property
     def net_payout(self):
-        """Seller payout after commission deduction."""
         price = float(self.selling_price or self.base_price)
         return round(price - self.commission_amount, 2)
 
@@ -236,7 +225,7 @@ class Product(models.Model):
         return self.stock_quantity <= self.low_stock_threshold
 
 
-# ── Unchanged supporting models ───────────────────────────────────────────────
+# ── Supporting models (unchanged) ─────────────────────────────────────────────
 
 class ProductImage(models.Model):
     product     = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')

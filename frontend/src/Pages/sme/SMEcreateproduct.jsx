@@ -372,6 +372,9 @@ const SMECreateProduct = () => {
         commission_type:     formData.commission_type,
         stock_quantity:      parseInt(formData.stock_quantity  || 0),
         low_stock_threshold: parseInt(formData.low_stock_threshold || 5),
+         // Ensure attributes keys are strings (they already are, but be explicit)
+        attributes: formData.attributes || {},
+        variants: formData.variants || [],
       };
       if (!formData.is_foldable) {
         ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => { submitData[k] = parseFloat(formData[k]); });

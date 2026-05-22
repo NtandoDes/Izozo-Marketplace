@@ -115,11 +115,8 @@ def _parse_product_fields(request_data):
             errors['commission_type'] = f'Must be one of: {", ".join(COMMISSION_RATES.keys())}'
         else:
             data['commission_type'] = commission_type
-            # commission_rate (%) is derived automatically in model.save()
-            # but we set it here too so it's correct before save() runs
             data['commission_rate'] = Decimal(str(COMMISSION_RATES[commission_type]))
     else:
-        # Allow explicit commission_rate override (e.g. admin tooling)
         raw_rate = request_data.get('commission_rate')
         if raw_rate is not None and raw_rate != '':
             try:
@@ -157,11 +154,18 @@ def _parse_product_fields(request_data):
         errors.update(delivery_errors)
         data.update(delivery_data)
     else:
-        # Safe defaults for foldable items so the DB non-null columns are satisfied
-        data['length_cm'] = int(request_data.get('length_cm', 1))
-        data['width_cm']  = int(request_data.get('width_cm',  1))
-        data['height_cm'] = int(request_data.get('height_cm', 1))
-        data['weight_kg'] = Decimal(str(request_data.get('weight_kg', '0.1')))
+        data['length_cm'] = None
+        data['width_cm']  = None
+        data['height_cm'] = None
+        raw_weight = request_data.get('weight_kg')
+        if raw_weight is not None and raw_weight != '':
+            try:
+                w = Decimal(str(raw_weight))
+                data['weight_kg'] = w if w > 0 else None
+            except Exception:
+                data['weight_kg'] = None
+        else:
+            data['weight_kg'] = None
 
     return data, errors
 
