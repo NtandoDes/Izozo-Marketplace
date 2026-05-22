@@ -5,25 +5,28 @@ import { useAuth } from '../../contexts/AuthContext';
 import agentService from '../../services/agentService';
 import styles from './AgentCreateProduct.module.css'; // reuse SME styles
 
-// ── Commission rules (ALL FLAT RATE) ────────────────────────────────────────
+// ── Commission rules (PERCENTAGE-BASED) ─────────────────────────────────────
 const CATEGORY_COMMISSION_RULES = {
-  small_items:     { label: 'Small Items',         desc: 'Clothing, accessories, jewellery',   commission: 5,  urgencyFactor: false },
-  medium_items:    { label: 'Medium Items',        desc: 'Boxed goods, shoes, electronics',    commission: 10, urgencyFactor: false },
-  large_bulky:     { label: 'Large / Bulky Items', desc: 'Furniture, bulk food, appliances',   commission: 20, urgencyFactor: false },
-  perishable_food: { label: 'Perishable Food',     desc: 'Fresh produce, dairy, meat, bakery', commission: 10, urgencyFactor: true },
+  hair_cosmetics:    { label: 'Hair, Hair Products & Cosmetics', desc: 'Shampoo, conditioner, weaves, makeup, skincare', commission: 12, foldable: true  },
+  clothing:          { label: 'Clothing',                        desc: 'All garments, jerseys, activewear, underwear',  commission: 5,  foldable: true  },
+  shoes:             { label: 'Shoes',                           desc: 'Sneakers, heels, sandals, boots',               commission: 10, foldable: false },
+  fragrances:        { label: 'Fragrances',                      desc: 'Perfumes, body sprays, cologne',                commission: 12, foldable: false },
+  local_handmade:    { label: 'Local Handmade Products',         desc: 'Crafts, candles, jewellery, artwork',           commission: 15, foldable: false },
+  cleaning_products: { label: 'Cleaning Products (SABS)',        desc: 'Detergents, disinfectants, SABS-approved items', commission: 8,  foldable: false },
 };
 
-const URGENCY_OPTIONS = [
-  { value: 'standard', label: 'Standard', surcharge: 0  },
-  { value: 'priority', label: 'Priority', surcharge: 5  },
-  { value: 'express',  label: 'Express',  surcharge: 15 },
-];
-
-const PACKAGING_OVERRIDES = [
-  { value: 'none',  label: 'Auto-calculate from dimensions' },
-  { value: 'small', label: 'Small  — R59  · 3–5 business days' },
-  { value: 'large', label: 'Large  — R109 · 3–5 business days' },
-];
+// ── Auto-detect commission type from a category name / full_path ─────────────
+function inferCommissionType(categoryName, fullPath) {
+  var t = ((categoryName || '') + ' ' + (fullPath || '')).toLowerCase().trim();
+  var has = function() { var words = Array.prototype.slice.call(arguments); return words.some(function(w) { return t.indexOf(w) !== -1; }); };
+  if (has('hair', 'weave', 'wig', 'cosmetic', 'makeup', 'make-up', 'skincare', 'shampoo', 'conditioner', 'mascara', 'lipstick', 'foundation', 'serum', 'lotion', 'beauty')) return 'hair_cosmetics';
+  if (has('perfume', 'fragrance', 'cologne', 'body spray')) return 'fragrances';
+  if (has('shoe', 'sneaker', 'heel', 'sandal', 'boot', 'trainer', 'footwear', 'slipper')) return 'shoes';
+  if (has('clothing', 'clothes', 'garment', 'jersey', 'activewear', 'underwear', 'shirt', 'dress', 'trouser', 'jean', 'skirt', 'jacket', 'hoodie', 'apparel', 'fashion', 'outfit', 'blouse', 'legging', 'uniform')) return 'clothing';
+  if (has('handmade', 'hand-made', 'craft', 'candle', 'jewel', 'artwork', 'pottery', 'woven', 'knit', 'bead')) return 'local_handmade';
+  if (has('clean', 'detergent', 'disinfect', 'sabs', 'bleach', 'sanitiz', 'hygiene', 'laundry', 'household')) return 'cleaning_products';
+  return null;
+}
 
 const STEPS = [
   { key: 'basics',   label: 'Basics'   },
@@ -34,25 +37,61 @@ const STEPS = [
   { key: 'review',   label: 'Review'   },
 ];
 
-// ── PAXI tier helper ────────────────────────────────────────────────────────
-function getPaxiTier(l, w, h, kg, foldable = false, override = 'none') {
-  if (override !== 'none') {
-    const meta = {
-      small: { price: 59,  eta: '3–5 business days', desc: 'Override: Small parcel' },
-      large: { price: 109, eta: '3–5 business days', desc: 'Override: Large parcel' },
-    };
-    return { category: override.toUpperCase(), ...meta[override], vol: null, source: 'override' };
-  }
-  if (foldable) return { category: 'SMALL', price: 59, eta: '3–5 business days', desc: 'Foldable — always SMALL', vol: null, source: 'foldable' };
+// ── PAXI tier helper ─────────────────────────────────────────────────────────
+function getPaxiTier(l, w, h, kg, foldable = false) {
+  if (foldable) return { category: 'SMALL', price: 59, eta: '3–5 business days', desc: 'Foldable item — always SMALL', vol: null };
   const vol    = Number(l) * Number(w) * Number(h);
   const weight = Number(kg);
   if (!vol || !weight || isNaN(vol) || isNaN(weight) || vol <= 0 || weight <= 0) return null;
-  if (vol <= 3000 && weight <= 5)  return { category: 'SMALL', price: 59,  eta: '3–5 business days', desc: 'Up to 3 000 cm³ and 5 kg',  vol, source: 'dimensions' };
-  if (vol <= 8000 && weight <= 10) return { category: 'LARGE', price: 109, eta: '3–5 business days', desc: 'Up to 8 000 cm³ and 10 kg', vol, source: 'dimensions' };
+  if (vol <= 3_000 && weight <= 5)  return { category: 'SMALL', price: 59,  eta: '3–5 business days', desc: 'Up to 3 000 cm³ and 5 kg',  vol };
+  if (vol <= 8_000 && weight <= 10) return { category: 'LARGE', price: 109, eta: '3–5 business days', desc: 'Up to 8 000 cm³ and 10 kg', vol };
   return null;
 }
 
-// ── Component ───────────────────────────────────────────────────────────────
+// ── Small tooltip component ───────────────────────────────────────────────────
+const InfoTip = ({ text }) => {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: 6, verticalAlign: 'middle' }}>
+      <button
+        type="button"
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        onFocus={() => setVisible(true)}
+        onBlur={() => setVisible(false)}
+        onClick={() => setVisible(v => !v)}
+        style={{
+          width: 17, height: 17, borderRadius: '50%', border: '1.5px solid #fbbf24',
+          background: '#fefce8', color: '#fbbf24', fontWeight: 700, fontSize: 11,
+          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          lineHeight: 1, padding: 0, flexShrink: 0,
+        }}
+        aria-label="More info"
+      >
+        i
+      </button>
+      {visible && (
+        <span style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+          background: '#78350f', color: '#fef9c3', fontSize: 12, lineHeight: 1.5,
+          padding: '8px 12px', borderRadius: 8, width: 220, zIndex: 100,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.25)', pointerEvents: 'none',
+          whiteSpace: 'normal', textAlign: 'left', fontWeight: 400,
+        }}>
+          {text}
+          <span style={{
+            position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+            width: 0, height: 0,
+            borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+            borderTop: '6px solid #78350f',
+          }} />
+        </span>
+      )}
+    </span>
+  );
+};
+
+// ── Component ────────────────────────────────────────────────────────────────
 const AgentCreateProduct = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -77,11 +116,9 @@ const AgentCreateProduct = () => {
     short_description:   '',
     category_ids:        [],
     commission_type:     '',
-    urgency_level:       'standard',
     base_price:          '',
     selling_price:       '',
     discount_percentage: '',
-    commission_rate:     '10.00',
     sku:                 '',
     barcode:             '',
     stock_quantity:      '0',
@@ -91,7 +128,6 @@ const AgentCreateProduct = () => {
     height_cm:           '',
     weight_kg:           '',
     is_foldable:         false,
-    packaging_override:  'none',
     featured_image:      null,
     images:              [],
     attributes:          {},
@@ -113,19 +149,13 @@ const AgentCreateProduct = () => {
   // ── Derived values ────────────────────────────────────────────────────────
   const paxiTier = getPaxiTier(
     formData.length_cm, formData.width_cm, formData.height_cm, formData.weight_kg,
-    formData.is_foldable, formData.packaging_override,
+    formData.is_foldable,
   );
-  const dimensionsRequired = !formData.is_foldable && formData.packaging_override === 'none';
 
   const commissionRule = formData.commission_type ? CATEGORY_COMMISSION_RULES[formData.commission_type] : null;
-  const urgencyOption  = URGENCY_OPTIONS.find(o => o.value === formData.urgency_level) || URGENCY_OPTIONS[0];
-  
-  // Get the raw commission rate (flat fee in Rands)
-  const rawCommissionRate = commissionRule
-    ? (commissionRule.urgencyFactor ? commissionRule.commission + urgencyOption.surcharge : commissionRule.commission)
-    : parseFloat(formData.commission_rate) || 0;
-    
-  const basePrice    = parseFloat(formData.base_price) || 0;
+  const commissionPct  = commissionRule ? commissionRule.commission : 0;
+
+  const basePrice    = parseFloat(formData.base_price)          || 0;
   const discountPct  = parseFloat(formData.discount_percentage) || 0;
   const sellingPrice = formData.selling_price
     ? parseFloat(formData.selling_price)
@@ -133,12 +163,8 @@ const AgentCreateProduct = () => {
       ? Math.round(basePrice * (1 - discountPct / 100) * 100) / 100
       : basePrice;
 
-  // FLAT RATE commission - direct Rand amount
-  const commissionAmt = sellingPrice > 0 ? rawCommissionRate : 0;
-  
-  const netPayout = sellingPrice > 0 
-    ? Math.max(0, Math.round((sellingPrice - commissionAmt) * 100) / 100)
-    : 0;
+  const commissionAmt = sellingPrice > 0 ? Math.round(sellingPrice * commissionPct / 100 * 100) / 100 : 0;
+  const netPayout     = sellingPrice > 0 ? Math.max(0, Math.round((sellingPrice - commissionAmt) * 100) / 100) : 0;
 
   const progressPct = Math.round(((currentStep + 1) / STEPS.length) * 100);
 
@@ -149,6 +175,13 @@ const AgentCreateProduct = () => {
     if (selectedCategory) loadCategoryAttributes(selectedCategory);
     else setCategoryAttributes([]);
   }, [selectedCategory]);
+
+  // Auto-set foldable whenever commission_type changes
+  useEffect(() => {
+    if (commissionRule) {
+      setFormData(p => ({ ...p, is_foldable: commissionRule.foldable }));
+    }
+  }, [formData.commission_type]);
 
   useEffect(() => {
     const handle = (e) => {
@@ -227,16 +260,36 @@ const AgentCreateProduct = () => {
   };
 
   // ── Handlers ─────────────────────────────────────────────────────────────
+  // FIX: cast sme_id to integer at point of entry so it's never a string
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(p => ({ ...p, [name]: type === 'checkbox' ? checked : type === 'number' ? (value === '' ? '' : parseFloat(value)) : value }));
+    setFormData(p => ({
+      ...p,
+      [name]: type === 'checkbox'
+        ? checked
+        : type === 'number'
+          ? (value === '' ? '' : parseFloat(value))
+          : name === 'sme_id'
+            ? (value === '' ? '' : parseInt(value, 10))
+            : value,
+    }));
   };
 
+  // When a product category is selected, auto-infer commission_type from its name
   const handleCategorySelect = (cat) => {
     if (!selectedCategories.find(c => c.id === cat.id)) {
       const next = [...selectedCategories, cat];
       setSelectedCategories(next);
-      setFormData(p => ({ ...p, category_ids: next.map(c => c.id) }));
+
+      const inferred = inferCommissionType(cat.name, cat.full_path || '');
+
+      setFormData(p => ({
+        ...p,
+        category_ids: next.map(c => c.id),
+        ...(inferred && next.length === 1 ? { commission_type: inferred } : {}),
+        ...(inferred && !p.commission_type ? { commission_type: inferred } : {}),
+      }));
+
       if (!selectedCategory) setSelectedCategory(cat.id);
     }
     setCategorySearchTerm('');
@@ -246,8 +299,26 @@ const AgentCreateProduct = () => {
   const handleCategoryRemove = (id) => {
     const next = selectedCategories.filter(c => c.id !== id);
     setSelectedCategories(next);
-    setFormData(p => ({ ...p, category_ids: next.map(c => c.id) }));
+
+    const newPrimary = next[0];
+    const inferred = newPrimary ? inferCommissionType(newPrimary.name, newPrimary.full_path || '') : null;
+    setFormData(p => ({
+      ...p,
+      category_ids: next.map(c => c.id),
+      commission_type: inferred || '',
+    }));
     if (selectedCategory === id) setSelectedCategory(next[0]?.id || null);
+  };
+
+  // Re-infer when primary category changes
+  const handlePrimaryCategoryChange = (categoryId) => {
+    const numId = parseInt(categoryId);
+    setSelectedCategory(numId);
+    const cat = selectedCategories.find(c => c.id === numId);
+    if (cat) {
+      const inferred = inferCommissionType(cat.name, cat.full_path || '');
+      if (inferred) setFormData(p => ({ ...p, commission_type: inferred }));
+    }
   };
 
   const handleAttributeChange = (attrId, value) => {
@@ -306,12 +377,14 @@ const AgentCreateProduct = () => {
       if (!formData.name)                      { alert('Product name is required'); return false; }
       if (!formData.description)               { alert('Product description is required'); return false; }
       if (!selectedCategories.length)          { alert('Please select at least one category'); return false; }
+      if (!formData.commission_type) {
+        alert('We could not automatically determine a commission category for your product. Please ensure your product category is specific enough (e.g. "Clothing", "Shoes", "Hair Products").'); return false;
+      }
     }
     if (step === 1) {
       if (!formData.base_price || parseFloat(formData.base_price) <= 0) { alert('Please enter a valid base price'); return false; }
-      if (!formData.commission_type)           { alert('Please select a commission category'); return false; }
     }
-    if (step === 2 && dimensionsRequired) {
+    if (step === 2 && !formData.is_foldable) {
       const missing = ['length_cm','width_cm','height_cm','weight_kg'].filter(k => !formData[k] || Number(formData[k]) <= 0);
       if (missing.length) { alert(`Please fill in: ${missing.map(k => k.replace('_cm','').replace('_kg','')).join(', ')}`); return false; }
     }
@@ -328,20 +401,31 @@ const AgentCreateProduct = () => {
   const handleSubmit = async () => {
     setLoading(true); setError(null);
     try {
+      // FIX: ensure sme_id is an integer, and send null (not delete) for
+      // dimensions when foldable so the API doesn't reject missing fields
       const submitData = {
         ...formData,
+        sme_id:              parseInt(formData.sme_id, 10),
         base_price:          parseFloat(formData.base_price),
         selling_price:       sellingPrice || null,
         discount_percentage: parseFloat(formData.discount_percentage || 0),
-        commission_rate:     rawCommissionRate,
-        commission_type:     'flat', // Force flat rate commission
-        stock_quantity:      parseInt(formData.stock_quantity || 0),
-        low_stock_threshold: parseInt(formData.low_stock_threshold || 5),
+        commission_rate:     commissionPct,
+        commission_type:     formData.commission_type,
+        stock_quantity:      parseInt(formData.stock_quantity || 0, 10),
+        low_stock_threshold: parseInt(formData.low_stock_threshold || 5, 10),
+        attributes:          formData.attributes || {},
+        variants:            formData.variants || [],
       };
-      if (dimensionsRequired) {
-        ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => { submitData[k] = parseFloat(formData[k]); });
+      if (!formData.is_foldable) {
+        ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => {
+          submitData[k] = parseFloat(formData[k]);
+        });
       } else {
-        ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => delete submitData[k]);
+        // Send null instead of deleting — Django REST serializers handle null
+        // for optional numeric fields; missing keys can trigger validation errors
+        ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => {
+          submitData[k] = null;
+        });
       }
       const response = await agentService.createProduct(submitData);
       const isActive = response.status === 'active' || response.is_active === true;
@@ -421,19 +505,21 @@ const AgentCreateProduct = () => {
             );
           })}
 
+          {/* Live commission preview */}
           {commissionRule && sellingPrice > 0 && (
             <div className={styles.sidebarCommission}>
               <div className={styles.sidebarCommissionLabel}>Commission</div>
-              <div className={styles.sidebarCommissionAmount}>R{rawCommissionRate}</div>
+              <div className={styles.sidebarCommissionAmount}>{commissionPct}%</div>
               <div className={styles.sidebarCommissionType}>
                 {commissionRule.label}
-                <span style={{ fontSize: 10, display: 'block', opacity: 0.7 }}>Flat rate per sale</span>
+                <span style={{ fontSize: 10, display: 'block', opacity: 0.7 }}>of selling price</span>
               </div>
-              {sellingPrice > 0 && (
-                <div className={styles.sidebarCommissionPayout}>
-                  Payout: <strong>R{netPayout.toFixed(2)}</strong>
-                </div>
-              )}
+              <div className={styles.sidebarCommissionPayout}>
+                = R{commissionAmt.toFixed(2)} deducted
+              </div>
+              <div className={styles.sidebarCommissionPayout} style={{ marginTop: 4 }}>
+                Payout: <strong>R{netPayout.toFixed(2)}</strong>
+              </div>
             </div>
           )}
         </nav>
@@ -521,13 +607,55 @@ const AgentCreateProduct = () => {
                 </div>
                 {selectedCategories.length > 1 && (
                   <div style={{ marginTop: 12 }}>
-                    <label className={styles.label} style={{ fontSize: 12 }}>Primary category (for attributes)</label>
-                    <select className={styles.select} value={selectedCategory || ''} onChange={e => setSelectedCategory(parseInt(e.target.value))}>
+                    <label className={styles.label} style={{ fontSize: 12 }}>Primary category (for attributes & commission)</label>
+                    <select className={styles.select} value={selectedCategory || ''} onChange={e => handlePrimaryCategoryChange(e.target.value)}>
                       {selectedCategories.map(c => <option key={c.id} value={c.id}>{c.full_path || c.name}</option>)}
                     </select>
                   </div>
                 )}
               </div>
+
+              {/* Auto-detected commission notice */}
+              {formData.commission_type && commissionRule && (
+                <div style={{
+                  marginTop: 4, marginBottom: 16,
+                  background: 'linear-gradient(135deg, #fefce8 0%, #fefce8 100%)',
+                  border: '1.5px solid #fbbf24',
+                  borderRadius: 12, padding: '14px 18px',
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                }}>
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>🏷️</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e', marginBottom: 2 }}>
+                      Commission auto-detected from your category
+                    </div>
+                    <div style={{ fontSize: 13, color: '#374151' }}>
+                      Your product falls under <strong>{commissionRule.label}</strong>. The platform will deduct{' '}
+                      <strong style={{ color: '#fbbf24' }}>{commissionPct}% of each sale</strong> as commission.
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                      {commissionRule.desc}
+                      {commissionRule.foldable && <span style={{ color: '#fbbf24', marginLeft: 8 }}>📦 Ships as foldable parcel</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Warning if no commission could be inferred */}
+              {selectedCategories.length > 0 && !formData.commission_type && (
+                <div style={{
+                  marginTop: 4, marginBottom: 16,
+                  background: '#fffbeb', border: '1.5px solid #fcd34d',
+                  borderRadius: 12, padding: '14px 18px',
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                }}>
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>⚠️</span>
+                  <div style={{ fontSize: 13, color: '#92400e' }}>
+                    <strong>Could not determine commission category</strong> from your selected categories.
+                    Please choose a more specific category (e.g. "Clothing", "Shoes", "Hair Products", "Fragrances", "Handmade Crafts", or "Cleaning Products") to continue.
+                  </div>
+                </div>
+              )}
 
               {/* Attributes */}
               {selectedCategories.length > 0 && selectedCategory && (
@@ -561,58 +689,54 @@ const AgentCreateProduct = () => {
           {/* ── Step 1: Pricing & Stock ─────────────────────────────────── */}
           {currentStep === 1 && (
             <>
-              {/* Commission category */}
+              {/* Commission — READ-ONLY, derived from category */}
               <div className={styles.card}>
                 <div className={styles.cardHeader}>
                   <div>
-                    <h2 className={styles.cardTitle}>Commission Category <span className={styles.req}>*</span></h2>
-                    <p className={styles.cardSubtitle}>Select the type that best matches your product</p>
+                    <h2 className={styles.cardTitle}>Commission</h2>
+                    <p className={styles.cardSubtitle}>Automatically determined from the product category — this cannot be changed</p>
                   </div>
                 </div>
-                <div className={styles.categoryGrid}>
-                  {Object.entries(CATEGORY_COMMISSION_RULES).map(([key, rule]) => (
-                    <div
-                      key={key}
-                      className={`${styles.categoryCard} ${formData.commission_type === key ? styles.selected : ''}`}
-                      onClick={() => setFormData(p => ({ ...p, commission_type: key }))}
-                    >
-                      <div className={styles.categoryCardTitle}>{rule.label}</div>
-                      <div className={styles.categoryCardDesc}>{rule.desc}</div>
-                      <span className={styles.commissionTag}>R{rule.commission} flat{rule.urgencyFactor ? ' + urgency' : ''}</span>
-                    </div>
-                  ))}
-                </div>
 
-                {formData.commission_type === 'perishable_food' && (
-                  <>
-                    <span className={styles.sectionLabel}>Urgency / Delivery Speed</span>
-                    <div className={styles.urgencyGrid}>
-                      {URGENCY_OPTIONS.map(opt => (
-                        <div
-                          key={opt.value}
-                          className={`${styles.urgencyCard} ${formData.urgency_level === opt.value ? styles.selected : ''}`}
-                          onClick={() => setFormData(p => ({ ...p, urgency_level: opt.value }))}
-                        >
-                          <div className={styles.urgencyLabel}>{opt.label}</div>
-                          <div className={styles.urgencySub}>{opt.surcharge > 0 ? `+R${opt.surcharge}` : 'Base rate'}</div>
-                        </div>
-                      ))}
+                {commissionRule ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 20,
+                    background: 'linear-gradient(135deg, #fefce8 0%, #fefce8 100%)',
+                    border: '2px solid #fbbf24', borderRadius: 14,
+                    padding: '20px 24px',
+                  }}>
+                    <div style={{
+                      flexShrink: 0, width: 72, height: 72, borderRadius: 16,
+                      background: '#fbbf24', color: '#78350f',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 800, lineHeight: 1,
+                    }}>
+                      <span style={{ fontSize: 26 }}>{commissionPct}%</span>
+                      <span style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>commission</span>
                     </div>
-                  </>
-                )}
-
-                {commissionRule && (
-                  <div className={styles.commissionPanel}>
-                    <div>
-                      <div className={styles.sidebarCommissionLabel}>Commission Rate</div>
-                      <div className={styles.commissionAmount}>R{rawCommissionRate} flat</div>
-                    </div>
-                    <div className={styles.commissionDivider} />
-                    <div className={styles.commissionInfo}>
-                      <strong>{commissionRule.label}</strong><br />
-                      Flat fee of R{rawCommissionRate} per sale
-                      {commissionRule.urgencyFactor && formData.urgency_level !== 'standard' && ` (includes R${urgencyOption.surcharge} urgency surcharge)`}
-                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#78350f', marginBottom: 4 }}>
+                        {commissionRule.label}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#4b5563', marginBottom: 4 }}>
+                        {commissionRule.desc}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>
+                        {commissionPct}% of the selling price is deducted per sale as a platform fee.
+                        {commissionRule.foldable && (
+                          <span style={{ display: 'block', marginTop: 4, color: '#fbbf24', fontWeight: 600 }}>
+                            📦 This category ships as a foldable (SMALL) parcel.
+                          </span>
+                        )}
+                      </div>
+                    </div>   
+                  </div>
+                ) : (
+                  <div style={{
+                    background: '#fef3c7', border: '1.5px solid #fbbf24',
+                    borderRadius: 12, padding: '16px 20px', fontSize: 13, color: '#92400e',
+                  }}>
+                    ⚠️ No commission category detected. Go back to Basics and select a recognised product category.
                   </div>
                 )}
               </div>
@@ -622,7 +746,10 @@ const AgentCreateProduct = () => {
                 <div className={styles.cardHeader}><h2 className={styles.cardTitle}>Pricing</h2></div>
                 <div className={styles.row2}>
                   <div className={styles.formGroup}>
-                    <label className={styles.label}>Base Price (R) <span className={styles.req}>*</span></label>
+                    <label className={styles.label}>
+                      Base Price (R) <span className={styles.req}>*</span>
+                      <InfoTip text="The original price of the product before any discounts. This is what the SME considers the full value of the item." />
+                    </label>
                     <input className={styles.input} type="number" name="base_price" value={formData.base_price} onChange={handleInputChange} placeholder="0.00" step="0.01" min="0" />
                   </div>
                   <div className={styles.formGroup}>
@@ -631,15 +758,25 @@ const AgentCreateProduct = () => {
                   </div>
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Selling Price (R)</label>
-                  <input className={styles.input} type="number" name="selling_price" value={formData.selling_price} onChange={handleInputChange} placeholder="Auto-calculated" step="0.01" min="0" />
-                  <span className={styles.helper}>Leave blank to auto-calculate from discount</span>
+                  <label className={styles.label}>
+                    Selling Price (R)
+                    <InfoTip text="The actual price customers will pay. If you enter a discount above, this is auto-calculated. Commission is calculated as a percentage of this selling price." />
+                  </label>
+                  <input className={styles.input} type="number" name="selling_price" value={formData.selling_price} onChange={handleInputChange} placeholder="Auto-calculated from discount" step="0.01" min="0" />
+                  <span className={styles.helper}>Leave blank to auto-calculate from discount. Commission is deducted from this amount.</span>
                 </div>
+
                 {sellingPrice > 0 && (
                   <div className={styles.priceSummary}>
                     <div className={styles.priceLine}><span>Selling price</span><span>R{sellingPrice.toFixed(2)}</span></div>
-                    <div className={styles.priceLine}><span>Commission (R{rawCommissionRate} flat)</span><span style={{ color: '#dc2626' }}>- R{commissionAmt.toFixed(2)}</span></div>
-                    <div className={styles.priceLineTotal}><span>Your payout</span><span style={{ color: '#16a34a' }}>R{netPayout.toFixed(2)}</span></div>
+                    <div className={styles.priceLine}>
+                      <span>Commission ({commissionPct}% of R{sellingPrice.toFixed(2)})</span>
+                      <span style={{ color: '#dc2626' }}>− R{commissionAmt.toFixed(2)}</span>
+                    </div>
+                    <div className={styles.priceLineTotal}>
+                      <span>SME payout</span>
+                      <span style={{ color: '#16a34a' }}>R{netPayout.toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -677,7 +814,7 @@ const AgentCreateProduct = () => {
               <div className={styles.cardHeader}>
                 <div>
                   <h2 className={styles.cardTitle}>Delivery & Packaging</h2>
-                  <p className={styles.cardSubtitle}>Measure the product as packaged — determines your PAXI tier</p>
+                  <p className={styles.cardSubtitle}>Measure the product as packaged — determines the PAXI tier</p>
                 </div>
               </div>
 
@@ -685,58 +822,64 @@ const AgentCreateProduct = () => {
                 <div className={`${styles.paxiPreview} ${paxiTier.category === 'SMALL' ? styles.paxiSmall : styles.paxiLarge}`}>
                   <span style={{ fontSize: 32 }}>📦</span>
                   <div>
-                    <div className={styles.paxiTierName}>
-                      PAXI {paxiTier.category} Parcel
-                      {paxiTier.source !== 'dimensions' && <span style={{ fontSize: 12, marginLeft: 8, fontWeight: 400, opacity: 0.7 }}>({paxiTier.source})</span>}
-                    </div>
+                    <div className={styles.paxiTierName}>PAXI {paxiTier.category} Parcel</div>
                     <div className={styles.paxiTierDesc}>{paxiTier.desc} · Fee: <strong>R{paxiTier.price}</strong> · {paxiTier.eta}</div>
                   </div>
                 </div>
               ) : (
-                <div className={styles.paxiEmpty}>📐 Fill in dimensions or select an option below to see the PAXI tier.</div>
+                <div className={styles.paxiEmpty}>📐 Fill in dimensions below to see the PAXI tier.</div>
               )}
 
               <div className={styles.foldablePanel}>
                 <label className={styles.foldableLabel}>
-                  <input type="checkbox" name="is_foldable" checked={formData.is_foldable} onChange={handleInputChange} style={{ marginTop: 3 }} />
+                  <input
+                    type="checkbox"
+                    name="is_foldable"
+                    checked={formData.is_foldable}
+                    onChange={handleInputChange}
+                    style={{ marginTop: 3 }}
+                  />
                   <div>
-                    <div className={styles.foldableTitle}>This product is foldable</div>
-                    <div className={styles.foldableDesc}>Clothing and textiles fold flat — always SMALL regardless of unfolded size.</div>
+                    <div className={styles.foldableTitle}>This item ships as a foldable parcel</div>
+                    <div className={styles.foldableDesc}>
+                      Clothing, hair products, and fabric items fold flat — always SMALL regardless of unfolded dimensions.
+                      {commissionRule?.foldable && (
+                        <span style={{ display: 'block', color: '#fbbf24', marginTop: 4 }}>
+                          ✓ Auto-ticked because the selected category ({commissionRule.label}) is foldable.
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </label>
               </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Packaging Override <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: 12 }}>(optional)</span></label>
-                <select className={styles.select} name="packaging_override" value={formData.packaging_override} onChange={handleInputChange}>
-                  {PACKAGING_OVERRIDES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <span className={styles.helper}>Use when dimensions don't reflect how the product ships.</span>
-              </div>
-
-              <span className={styles.sectionLabel}>
-                Parcel Dimensions {dimensionsRequired ? <span className={styles.req}>*</span> : <span style={{ fontWeight: 400, textTransform: 'none', fontSize: 11, color: '#9ca3af', marginLeft: 6 }}>(optional)</span>}
-              </span>
-              <div className={styles.row2}>
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Length {dimensionsRequired && <span className={styles.req}>*</span>} <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
-                  <input className={styles.input} type="number" name="length_cm" value={formData.length_cm} onChange={handleInputChange} placeholder="e.g., 30" min="1" step="1" />
-                </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Width {dimensionsRequired && <span className={styles.req}>*</span>} <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
-                  <input className={styles.input} type="number" name="width_cm" value={formData.width_cm} onChange={handleInputChange} placeholder="e.g., 20" min="1" step="1" />
-                </div>
-              </div>
-              <div className={styles.row2}>
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Height {dimensionsRequired && <span className={styles.req}>*</span>} <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
-                  <input className={styles.input} type="number" name="height_cm" value={formData.height_cm} onChange={handleInputChange} placeholder="e.g., 10" min="1" step="1" />
-                </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Weight {dimensionsRequired && <span className={styles.req}>*</span>} <span style={{ fontWeight: 400, color: '#9ca3af' }}>(kg)</span></label>
-                  <input className={styles.input} type="number" name="weight_kg" value={formData.weight_kg} onChange={handleInputChange} placeholder="e.g., 0.5" min="0.01" step="0.01" />
-                </div>
-              </div>
+              {!formData.is_foldable && (
+                <>
+                  <span className={styles.sectionLabel}>
+                    Parcel Dimensions <span className={styles.req}>*</span>
+                  </span>
+                  <div className={styles.row2}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.label}>Length <span className={styles.req}>*</span> <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
+                      <input className={styles.input} type="number" name="length_cm" value={formData.length_cm} onChange={handleInputChange} placeholder="e.g., 30" min="1" step="1" />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.label}>Width <span className={styles.req}>*</span> <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
+                      <input className={styles.input} type="number" name="width_cm" value={formData.width_cm} onChange={handleInputChange} placeholder="e.g., 20" min="1" step="1" />
+                    </div>
+                  </div>
+                  <div className={styles.row2}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.label}>Height <span className={styles.req}>*</span> <span style={{ fontWeight: 400, color: '#9ca3af' }}>(cm)</span></label>
+                      <input className={styles.input} type="number" name="height_cm" value={formData.height_cm} onChange={handleInputChange} placeholder="e.g., 10" min="1" step="1" />
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label className={styles.label}>Weight <span className={styles.req}>*</span> <span style={{ fontWeight: 400, color: '#9ca3af' }}>(kg)</span></label>
+                      <input className={styles.input} type="number" name="weight_kg" value={formData.weight_kg} onChange={handleInputChange} placeholder="e.g., 0.5" min="0.01" step="0.01" />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <span className={styles.sectionLabel}>PAXI Tier Reference</span>
               <div className={styles.tableWrap}>
@@ -762,7 +905,7 @@ const AgentCreateProduct = () => {
                   </tbody>
                 </table>
               </div>
-              <span className={styles.helper} style={{ marginTop: 8, display: 'block' }}>Foldable items are always SMALL. Manual override supersedes all other logic.</span>
+              <span className={styles.helper} style={{ marginTop: 8, display: 'block' }}>Foldable items always ship as SMALL parcels.</span>
             </div>
           )}
 
@@ -870,46 +1013,46 @@ const AgentCreateProduct = () => {
 
               <span className={styles.sectionLabel}>Product Info</span>
               {[
-                ['SME', assignedSMEs.find(s => String(s.id) === String(formData.sme_id))?.business_name || '—'],
-                ['Name', formData.name || '—'],
-                ['Short description', formData.short_description || '—'],
-                ['Categories', selectedCategories.map(c => c.full_path || c.name).join(', ') || '—'],
+                ['SME',              assignedSMEs.find(s => String(s.id) === String(formData.sme_id))?.business_name || '—'],
+                ['Name',             formData.name || '—'],
+                ['Short description',formData.short_description || '—'],
+                ['Categories',       selectedCategories.map(c => c.full_path || c.name).join(', ') || '—'],
               ].map(([k, v]) => (
                 <div key={k} className={styles.reviewRow}><span className={styles.reviewKey}>{k}</span><span className={styles.reviewVal}>{v}</span></div>
               ))}
 
               <span className={styles.sectionLabel} style={{ marginTop: 20 }}>Pricing</span>
               {[
-                ['Base price', `R${parseFloat(formData.base_price || 0).toFixed(2)}`],
-                ['Selling price', `R${sellingPrice.toFixed(2)}`],
-                ['Discount', formData.discount_percentage ? `${formData.discount_percentage}%` : 'None'],
+                ['Base price',      `R${parseFloat(formData.base_price || 0).toFixed(2)}`],
+                ['Selling price',   `R${sellingPrice.toFixed(2)}`],
+                ['Discount',        formData.discount_percentage ? `${formData.discount_percentage}%` : 'None'],
                 ['Commission type', commissionRule?.label || '—'],
-                ['Commission fee', `R${rawCommissionRate} (flat rate)`],
-                ['Your payout', `R${netPayout.toFixed(2)}`],
+                ['Commission rate', `${commissionPct}% of selling price`],
+                ['Commission (R)',  `R${commissionAmt.toFixed(2)}`],
+                ['SME payout',      `R${netPayout.toFixed(2)}`],
               ].map(([k, v]) => (
                 <div key={k} className={styles.reviewRow}>
                   <span className={styles.reviewKey}>{k}</span>
-                  <span className={`${styles.reviewVal} ${k === 'Your payout' ? styles.reviewValGreen : ''}`}>{v}</span>
+                  <span className={`${styles.reviewVal} ${k === 'SME payout' ? styles.reviewValGreen : ''}`}>{v}</span>
                 </div>
               ))}
 
               <span className={styles.sectionLabel} style={{ marginTop: 20 }}>Delivery</span>
               {[
-                ['PAXI tier', paxiTier ? `${paxiTier.category} (R${paxiTier.price})` : 'Not determined'],
-                ['Foldable', formData.is_foldable ? 'Yes' : 'No'],
-                ['Packaging override', formData.packaging_override !== 'none' ? formData.packaging_override : 'None (auto)'],
-                ['Dimensions', !formData.is_foldable && formData.packaging_override === 'none' && formData.length_cm ? `${formData.length_cm} × ${formData.width_cm} × ${formData.height_cm} cm, ${formData.weight_kg} kg` : '—'],
+                ['PAXI tier',  paxiTier ? `${paxiTier.category} (R${paxiTier.price})` : 'Not determined'],
+                ['Foldable',   formData.is_foldable ? 'Yes — always ships SMALL' : 'No'],
+                ['Dimensions', !formData.is_foldable && formData.length_cm ? `${formData.length_cm} × ${formData.width_cm} × ${formData.height_cm} cm, ${formData.weight_kg} kg` : '—'],
               ].map(([k, v]) => (
                 <div key={k} className={styles.reviewRow}><span className={styles.reviewKey}>{k}</span><span className={styles.reviewVal}>{v}</span></div>
               ))}
 
               <span className={styles.sectionLabel} style={{ marginTop: 20 }}>Inventory</span>
               {[
-                ['SKU', formData.sku || '—'],
-                ['Barcode', formData.barcode || '—'],
-                ['Stock', formData.stock_quantity],
+                ['SKU',             formData.sku || '—'],
+                ['Barcode',         formData.barcode || '—'],
+                ['Stock',           formData.stock_quantity],
                 ['Low stock alert', formData.low_stock_threshold],
-                ['Variants', formData.variants.length ? `${formData.variants.length} variant(s)` : 'None'],
+                ['Variants',        formData.variants.length ? `${formData.variants.length} variant(s)` : 'None'],
               ].map(([k, v]) => (
                 <div key={k} className={styles.reviewRow}><span className={styles.reviewKey}>{k}</span><span className={styles.reviewVal}>{v}</span></div>
               ))}
