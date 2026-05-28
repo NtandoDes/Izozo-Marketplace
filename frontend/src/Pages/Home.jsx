@@ -297,86 +297,41 @@ export default function Home() {
   };
 
   const handleAddToCart = (product, e) => {
-  e.stopPropagation();
-  e.preventDefault();
+    e.stopPropagation();
+    e.preventDefault();
 
-  // Current cart
-  const existingCart = JSON.parse(
-    localStorage.getItem("izozo-cart") || "[]"
-  );
+    const result = addToCart({
+      id:              product.id,
+      product_id:      product.id,
+      name:            product.name,
+      product_name:    product.name,
+      price:           product.selling_price || product.base_price,
+      originalPrice:   product.base_price,
+      image:           getProductImage(product),
+      seller:          product.sme_name || product.seller || product.sme?.business_name || "Local Seller",
+      sme_id:          product.sme_id   || product.sme?.id || product.sme_name || product.seller,
+      commission_rate: product.commission_rate || 10,
+      commission_type: product.commission_type || "",
+      category:        product.category?.name  || product.category || "",
+      sku:             product.sku     || "",
+      variant_id:      null,
+      variant_name:    null,
+      // Stock ceiling — CartContext uses this to prevent over-ordering
+      stock_quantity:  product.stock_quantity ?? null,
+      // PAXI dimensions — CartContext uses these for the delivery size limit
+      length_cm:       product.length_cm  ?? null,
+      width_cm:        product.width_cm   ?? null,
+      height_cm:       product.height_cm  ?? null,
+      weight_kg:       product.weight_kg  ?? null,
+      is_foldable:     product.is_foldable ?? false,
+    }, 1);
 
-  // Create a reliable seller identifier
-  const newSellerKey =
-    product.sme_id ||
-    product.sme?.id ||
-    product.sme_name ||
-    product.seller ||
-    "unknown-seller";
-
-  // Check existing cart seller
-  if (existingCart.length > 0) {
-    const existingSellerKey =
-      existingCart[0].sme_id ||
-      existingCart[0].seller ||
-      "unknown-seller";
-
-    // Prevent mixing SMEs
-    if (String(existingSellerKey) !== String(newSellerKey)) {
-      alert(
-        "You can only add products from one seller at a time. Please clear your cart before adding items from another seller."
-      );
-      return;
+    if (!result.success) {
+      alert(result.message || "Could not add item to cart.");
+    } else {
+      alert(`${product.name} added to cart!`);
     }
-  }
-
-  addToCart({
-    id: product.id,
-    product_id: product.id,
-
-    name: product.name,
-    product_name: product.name,
-
-    price: product.selling_price || product.base_price,
-    originalPrice: product.base_price,
-
-    image: getProductImage(product),
-
-    quantity: 1,
-
-    // Seller info
-    seller:
-      product.sme_name ||
-      product.seller ||
-      product.sme?.business_name ||
-      "Local Seller",
-
-    sme_id:
-      product.sme_id ||
-      product.sme?.id ||
-      product.sme_name ||
-      product.seller,
-
-    commission_rate: product.commission_rate || 10,
-
-    category:
-      product.category?.name ||
-      product.category ||
-      "",
-
-    sku: product.sku || "",
-
-    variant_id: null,
-    variant_name: null,
-
-    // Dimensions
-    length_cm: product.length_cm ?? null,
-    width_cm: product.width_cm ?? null,
-    height_cm: product.height_cm ?? null,
-    weight_kg: product.weight_kg ?? null,
-  });
-
-  alert(`${product.name} added to cart!`);
-};
+  };
 
   const formatPrice = (price) => {
     if (!price) return 'R0';

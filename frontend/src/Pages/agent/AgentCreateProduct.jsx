@@ -136,7 +136,8 @@ const AgentCreateProduct = () => {
 
   const [imagePreviews, setImagePreviews]               = useState([]);
   const [featuredImagePreview, setFeaturedImagePreview] = useState(null);
-  const [selectedCategories, setSelectedCategories]     = useState([]);
+  // Single selected category object (not array)
+  const [selectedCategoryObj, setSelectedCategoryObj]   = useState(null);
   const [categorySearchTerm, setCategorySearchTerm]     = useState('');
   const [attributeErrors, setAttributeErrors]           = useState({});
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -155,13 +156,12 @@ const AgentCreateProduct = () => {
   const commissionRule = formData.commission_type ? CATEGORY_COMMISSION_RULES[formData.commission_type] : null;
   const commissionPct  = commissionRule ? commissionRule.commission : 0;
 
-  const basePrice    = parseFloat(formData.base_price)          || 0;
-  const discountPct  = parseFloat(formData.discount_percentage) || 0;
-  const sellingPrice = formData.selling_price
-    ? parseFloat(formData.selling_price)
-    : basePrice > 0 && discountPct > 0
-      ? Math.round(basePrice * (1 - discountPct / 100) * 100) / 100
-      : basePrice;
+  const basePrice   = parseFloat(formData.base_price)          || 0;
+  const discountPct = parseFloat(formData.discount_percentage) || 0;
+  // Selling price is always auto-calculated — never manually editable
+  const sellingPrice = basePrice > 0 && discountPct > 0
+    ? Math.round(basePrice * (1 - discountPct / 100) * 100) / 100
+    : basePrice;
 
   const commissionAmt = sellingPrice > 0 ? Math.round(sellingPrice * commissionPct / 100 * 100) / 100 : 0;
   const netPayout     = sellingPrice > 0 ? Math.max(0, Math.round((sellingPrice - commissionAmt) * 100) / 100) : 0;
@@ -194,10 +194,9 @@ const AgentCreateProduct = () => {
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
+  // Sync selling_price in formData whenever sellingPrice changes (for submit)
   useEffect(() => {
-    if (basePrice > 0 && discountPct > 0 && !formData.selling_price) {
-      setFormData(p => ({ ...p, selling_price: (Math.round(basePrice * (1 - discountPct / 100) * 100) / 100).toString() }));
-    }
+    setFormData(p => ({ ...p, selling_price: sellingPrice > 0 ? sellingPrice.toString() : '' }));
   }, [formData.base_price, formData.discount_percentage]);
 
   // ── Loaders ───────────────────────────────────────────────────────────────
@@ -260,7 +259,6 @@ const AgentCreateProduct = () => {
   };
 
   // ── Handlers ─────────────────────────────────────────────────────────────
-  // FIX: cast sme_id to integer at point of entry so it's never a string
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(p => ({
@@ -275,50 +273,28 @@ const AgentCreateProduct = () => {
     }));
   };
 
-  // When a product category is selected, auto-infer commission_type from its name
+  // Single category selection — replaces any previously selected category
   const handleCategorySelect = (cat) => {
-    if (!selectedCategories.find(c => c.id === cat.id)) {
-      const next = [...selectedCategories, cat];
-      setSelectedCategories(next);
+    setSelectedCategoryObj(cat);
+    setSelectedCategory(cat.id);
 
-      const inferred = inferCommissionType(cat.name, cat.full_path || '');
+    const inferred = inferCommissionType(cat.name, cat.full_path || '');
+    setFormData(p => ({
+      ...p,
+      category_ids: [cat.id],
+      commission_type: inferred || '',
+    }));
 
-      setFormData(p => ({
-        ...p,
-        category_ids: next.map(c => c.id),
-        ...(inferred && next.length === 1 ? { commission_type: inferred } : {}),
-        ...(inferred && !p.commission_type ? { commission_type: inferred } : {}),
-      }));
-
-      if (!selectedCategory) setSelectedCategory(cat.id);
-    }
     setCategorySearchTerm('');
     setShowCategoryDropdown(false);
   };
 
-  const handleCategoryRemove = (id) => {
-    const next = selectedCategories.filter(c => c.id !== id);
-    setSelectedCategories(next);
-
-    const newPrimary = next[0];
-    const inferred = newPrimary ? inferCommissionType(newPrimary.name, newPrimary.full_path || '') : null;
-    setFormData(p => ({
-      ...p,
-      category_ids: next.map(c => c.id),
-      commission_type: inferred || '',
-    }));
-    if (selectedCategory === id) setSelectedCategory(next[0]?.id || null);
-  };
-
-  // Re-infer when primary category changes
-  const handlePrimaryCategoryChange = (categoryId) => {
-    const numId = parseInt(categoryId);
-    setSelectedCategory(numId);
-    const cat = selectedCategories.find(c => c.id === numId);
-    if (cat) {
-      const inferred = inferCommissionType(cat.name, cat.full_path || '');
-      if (inferred) setFormData(p => ({ ...p, commission_type: inferred }));
-    }
+  // Remove the selected category
+  const handleCategoryRemove = () => {
+    setSelectedCategoryObj(null);
+    setSelectedCategory(null);
+    setFormData(p => ({ ...p, category_ids: [], commission_type: '' }));
+    setCategoryAttributes([]);
   };
 
   const handleAttributeChange = (attrId, value) => {
@@ -373,16 +349,16 @@ const AgentCreateProduct = () => {
 
   const validateStep = (step) => {
     if (step === 0) {
-      if (!formData.sme_id)                    { alert('Please select an SME'); return false; }
-      if (!formData.name)                      { alert('Product name is required'); return false; }
-      if (!formData.description)               { alert('Product description is required'); return false; }
-      if (!selectedCategories.length)          { alert('Please select at least one category'); return false; }
+      if (!formData.sme_id)          { alert('Please select an SME'); return false; }
+      if (!formData.name)            { alert('Product name is required'); return false; }
+      if (!formData.description)     { alert('Product description is required'); return false; }
+      if (!selectedCategoryObj)      { alert('Please select a category'); return false; }
       if (!formData.commission_type) {
         alert('We could not automatically determine a commission category for your product. Please ensure your product category is specific enough (e.g. "Clothing", "Shoes", "Hair Products").'); return false;
       }
     }
     if (step === 1) {
-      if (!formData.base_price || parseFloat(formData.base_price) <= 0) { alert('Please enter a valid base price'); return false; }
+      if (!formData.base_price || parseFloat(formData.base_price) <= 0) { alert('Please enter a valid cost of goods'); return false; }
     }
     if (step === 2 && !formData.is_foldable) {
       const missing = ['length_cm','width_cm','height_cm','weight_kg'].filter(k => !formData[k] || Number(formData[k]) <= 0);
@@ -401,8 +377,6 @@ const AgentCreateProduct = () => {
   const handleSubmit = async () => {
     setLoading(true); setError(null);
     try {
-      // FIX: ensure sme_id is an integer, and send null (not delete) for
-      // dimensions when foldable so the API doesn't reject missing fields
       const submitData = {
         ...formData,
         sme_id:              parseInt(formData.sme_id, 10),
@@ -421,8 +395,6 @@ const AgentCreateProduct = () => {
           submitData[k] = parseFloat(formData[k]);
         });
       } else {
-        // Send null instead of deleting — Django REST serializers handle null
-        // for optional numeric fields; missing keys can trigger validation errors
         ['length_cm','width_cm','height_cm','weight_kg'].forEach(k => {
           submitData[k] = null;
         });
@@ -570,47 +542,42 @@ const AgentCreateProduct = () => {
                 <textarea className={styles.textarea} name="description" value={formData.description} onChange={handleInputChange} placeholder="Detailed description, materials, care instructions, sizes…" />
               </div>
 
-              {/* Category selector */}
+              {/* Single category selector */}
               <div className={styles.formGroup}>
-                <label className={styles.label}>Categories <span className={styles.req}>*</span></label>
-                <div className={styles.catTagsWrap}>
-                  {selectedCategories.map(c => (
-                    <span key={c.id} className={styles.catTag}>
-                      {c.full_path || c.name}
-                      <button type="button" className={styles.catTagRemove} onClick={() => handleCategoryRemove(c.id)}>×</button>
+                <label className={styles.label}>Category <span className={styles.req}>*</span></label>
+
+                {/* Show selected category as a tag, or the search input */}
+                {selectedCategoryObj ? (
+                  <div className={styles.catTagsWrap}>
+                    <span className={styles.catTag}>
+                      {selectedCategoryObj.full_path || selectedCategoryObj.name}
+                      <button type="button" className={styles.catTagRemove} onClick={handleCategoryRemove}>×</button>
                     </span>
-                  ))}
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    ref={categoryInputRef}
-                    className={styles.input}
-                    type="text"
-                    placeholder={categoriesLoading ? 'Loading categories…' : 'Search and add categories…'}
-                    value={categorySearchTerm}
-                    onChange={e => { setCategorySearchTerm(e.target.value); setShowCategoryDropdown(true); }}
-                    onFocus={() => setShowCategoryDropdown(true)}
-                    disabled={categoriesLoading}
-                  />
-                  {showCategoryDropdown && !categoriesLoading && (
-                    <div ref={categoryDropdownRef} className={styles.catDropdown}>
-                      {(categorySearchTerm === '' ? categories : filteredCategories).map(c => (
-                        <button key={c.id} type="button" className={styles.catOption} onClick={() => handleCategorySelect(c)}>
-                          {c.full_path || c.name}
-                        </button>
-                      ))}
-                      {categorySearchTerm !== '' && !filteredCategories.length && (
-                        <div className={styles.catEmpty}>No categories matching "{categorySearchTerm}"</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {selectedCategories.length > 1 && (
-                  <div style={{ marginTop: 12 }}>
-                    <label className={styles.label} style={{ fontSize: 12 }}>Primary category (for attributes & commission)</label>
-                    <select className={styles.select} value={selectedCategory || ''} onChange={e => handlePrimaryCategoryChange(e.target.value)}>
-                      {selectedCategories.map(c => <option key={c.id} value={c.id}>{c.full_path || c.name}</option>)}
-                    </select>
+                  </div>
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      ref={categoryInputRef}
+                      className={styles.input}
+                      type="text"
+                      placeholder={categoriesLoading ? 'Loading categories…' : 'Search and select a category…'}
+                      value={categorySearchTerm}
+                      onChange={e => { setCategorySearchTerm(e.target.value); setShowCategoryDropdown(true); }}
+                      onFocus={() => setShowCategoryDropdown(true)}
+                      disabled={categoriesLoading}
+                    />
+                    {showCategoryDropdown && !categoriesLoading && (
+                      <div ref={categoryDropdownRef} className={styles.catDropdown}>
+                        {(categorySearchTerm === '' ? categories : filteredCategories).map(c => (
+                          <button key={c.id} type="button" className={styles.catOption} onClick={() => handleCategorySelect(c)}>
+                            {c.full_path || c.name}
+                          </button>
+                        ))}
+                        {categorySearchTerm !== '' && !filteredCategories.length && (
+                          <div className={styles.catEmpty}>No categories matching "{categorySearchTerm}"</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -642,7 +609,7 @@ const AgentCreateProduct = () => {
               )}
 
               {/* Warning if no commission could be inferred */}
-              {selectedCategories.length > 0 && !formData.commission_type && (
+              {selectedCategoryObj && !formData.commission_type && (
                 <div style={{
                   marginTop: 4, marginBottom: 16,
                   background: '#fffbeb', border: '1.5px solid #fcd34d',
@@ -651,14 +618,14 @@ const AgentCreateProduct = () => {
                 }}>
                   <span style={{ fontSize: 22, flexShrink: 0 }}>⚠️</span>
                   <div style={{ fontSize: 13, color: '#92400e' }}>
-                    <strong>Could not determine commission category</strong> from your selected categories.
+                    <strong>Could not determine commission category</strong> from your selected category.
                     Please choose a more specific category (e.g. "Clothing", "Shoes", "Hair Products", "Fragrances", "Handmade Crafts", or "Cleaning Products") to continue.
                   </div>
                 </div>
               )}
 
               {/* Attributes */}
-              {selectedCategories.length > 0 && selectedCategory && (
+              {selectedCategoryObj && selectedCategory && (
                 loadingAttributes ? (
                   <div className={styles.helper}>Loading attributes…</div>
                 ) : categoryAttributes.length > 0 ? (
@@ -729,7 +696,9 @@ const AgentCreateProduct = () => {
                           </span>
                         )}
                       </div>
-                    </div>   
+                    </div>
+                    <div style={{ flexShrink: 0, fontSize: 24, opacity: 0.35 }} title="Commission rate is locked to the product category">
+                    </div>
                   </div>
                 ) : (
                   <div style={{
@@ -747,8 +716,8 @@ const AgentCreateProduct = () => {
                 <div className={styles.row2}>
                   <div className={styles.formGroup}>
                     <label className={styles.label}>
-                      Base Price (R) <span className={styles.req}>*</span>
-                      <InfoTip text="The original price of the product before any discounts. This is what the SME considers the full value of the item." />
+                      Cost Of Goods (R) <span className={styles.req}>*</span>
+                      <InfoTip text="The Cost of Goods before Markup." />
                     </label>
                     <input className={styles.input} type="number" name="base_price" value={formData.base_price} onChange={handleInputChange} placeholder="0.00" step="0.01" min="0" />
                   </div>
@@ -757,13 +726,21 @@ const AgentCreateProduct = () => {
                     <input className={styles.input} type="number" name="discount_percentage" value={formData.discount_percentage} onChange={handleInputChange} placeholder="0" step="0.1" min="0" max="100" />
                   </div>
                 </div>
+
+                {/* Selling price — read-only, auto-calculated */}
                 <div className={styles.formGroup}>
                   <label className={styles.label}>
                     Selling Price (R)
-                    <InfoTip text="The actual price customers will pay. If you enter a discount above, this is auto-calculated. Commission is calculated as a percentage of this selling price." />
+                    <InfoTip text="Auto-calculated from Cost Of Goods minus any discount. Commission is calculated as a percentage of this selling price." />
                   </label>
-                  <input className={styles.input} type="number" name="selling_price" value={formData.selling_price} onChange={handleInputChange} placeholder="Auto-calculated from discount" step="0.01" min="0" />
-                  <span className={styles.helper}>Leave blank to auto-calculate from discount. Commission is deducted from this amount.</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    value={sellingPrice > 0 ? sellingPrice.toFixed(2) : ''}
+                    placeholder="Calculated from cost of goods"
+                    readOnly
+                    style={{ background: '#f9fafb', color: '#6b7280', cursor: 'not-allowed' }}
+                  />
                 </div>
 
                 {sellingPrice > 0 && (
@@ -976,7 +953,17 @@ const AgentCreateProduct = () => {
                 <div className={styles.variantTableWrap}>
                   <table className={styles.variantTable}>
                     <thead>
-                      <tr><th>Name</th><th>SKU</th><th>Price adj.</th><th>Stock</th><th>Status</th><th></th></tr>
+                      <tr>
+                        <th>Name</th>
+                        <th>SKU</th>
+                        <th>Price adj.</th>
+                        <th>Stock</th>
+                        <th>
+                          Status
+                          
+                        </th>
+                        <th></th>
+                      </tr>
                     </thead>
                     <tbody>
                       {formData.variants.map((v, i) => (
@@ -1016,7 +1003,7 @@ const AgentCreateProduct = () => {
                 ['SME',              assignedSMEs.find(s => String(s.id) === String(formData.sme_id))?.business_name || '—'],
                 ['Name',             formData.name || '—'],
                 ['Short description',formData.short_description || '—'],
-                ['Categories',       selectedCategories.map(c => c.full_path || c.name).join(', ') || '—'],
+                ['Category',         selectedCategoryObj ? (selectedCategoryObj.full_path || selectedCategoryObj.name) : '—'],
               ].map(([k, v]) => (
                 <div key={k} className={styles.reviewRow}><span className={styles.reviewKey}>{k}</span><span className={styles.reviewVal}>{v}</span></div>
               ))}
@@ -1068,7 +1055,7 @@ const AgentCreateProduct = () => {
               <button type="button" className={styles.btnPrimary} onClick={handleNext}>Continue →</button>
             ) : (
               <button type="button" className={styles.btnSubmit} onClick={handleSubmit} disabled={loading}>
-                {loading ? '⏳ Submitting…' : ' Submit Product'}
+                {loading ? '⏳ Submitting…' : '🚀 Submit Product'}
               </button>
             )}
           </div>
@@ -1102,10 +1089,6 @@ const AgentCreateProduct = () => {
                 <input className={styles.input} type="number" value={currentVariant?.stock_quantity || 0} onChange={e => setCurrentVariant({ ...currentVariant, stock_quantity: parseInt(e.target.value) || 0 })} min="0" />
               </div>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginBottom: 20 }}>
-              <input type="checkbox" checked={currentVariant?.is_active || false} onChange={e => setCurrentVariant({ ...currentVariant, is_active: e.target.checked })} />
-              <span>Active</span>
-            </label>
             <div className={styles.modalFooter}>
               <button className={styles.btnSecondary} onClick={() => setShowVariantModal(false)}>Cancel</button>
               <button className={styles.btnPrimary} onClick={handleSaveVariant}>Save Variant</button>

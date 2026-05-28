@@ -16,7 +16,9 @@ export default function Cart() {
     updateQuantity, 
     removeFromCart, 
     clearCart,
-    refreshCart 
+    refreshCart,
+    getItemMax,
+    addToCart,
   } = useCart();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -26,6 +28,8 @@ export default function Cart() {
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [recommendedProducts, setRecommendedProducts] = useState([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  // Per-item limit feedback: { [itemId]: string }
+  const [limitMessages, setLimitMessages] = useState({});
 
   // Fetch recommended products when cart changes
   useEffect(() => {
@@ -37,11 +41,8 @@ export default function Cart() {
   const fetchRecommendedProducts = async () => {
     setLoadingRecommendations(true);
     try {
-      // Get categories from cart items
       const categories = [...new Set(cartItems.map(item => item.category_id))];
-      
       if (categories.length > 0) {
-        // Fetch products from the same categories
         const response = await cartService.getRecommendedProducts(categories, cartItems.map(item => item.id));
         setRecommendedProducts(response.slice(0, 4));
       }
@@ -52,20 +53,43 @@ export default function Cart() {
     }
   };
 
-  // Handle quantity change
+  // ── Quantity change ────────────────────────────────────────────────────────
+  // Shows a transient message if the quantity was clamped.
+
   const handleQuantityChange = async (itemId, newQuantity) => {
     if (newQuantity < 1) {
       await handleRemoveItem(itemId);
-    } else {
-      setIsUpdating(true);
-      try {
-        await updateQuantity(itemId, newQuantity);
-      } catch (error) {
-        console.error('Error updating quantity:', error);
-        alert('Failed to update quantity. Please try again.');
-      } finally {
-        setIsUpdating(false);
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const result = updateQuantity(itemId, newQuantity);
+
+      if (!result.success && result.clampedTo !== undefined) {
+        // Quantity was clamped — show a brief inline message
+        setLimitMessages((prev) => ({ ...prev, [itemId]: result.message }));
+        setTimeout(() => {
+          setLimitMessages((prev) => {
+            const next = { ...prev };
+            delete next[itemId];
+            return next;
+          });
+        }, 3500);
+      } else {
+        // Clear any old message if the update succeeded
+        setLimitMessages((prev) => {
+          if (!prev[itemId]) return prev;
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
       }
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+      alert('Failed to update quantity. Please try again.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -75,6 +99,11 @@ export default function Cart() {
       setIsUpdating(true);
       try {
         await removeFromCart(itemId);
+        setLimitMessages((prev) => {
+          const next = { ...prev };
+          delete next[itemId];
+          return next;
+        });
       } catch (error) {
         console.error('Error removing item:', error);
         alert('Failed to remove item. Please try again.');
@@ -90,7 +119,6 @@ export default function Cart() {
     if (!couponCode.trim()) return;
     
     setIsLoading(true);
-    
     try {
       const response = await cartService.validateCoupon(couponCode);
       if (response.valid) {
@@ -108,27 +136,20 @@ export default function Cart() {
     }
   };
 
-  // Calculate discount
+  // Calculate totals
   const discountAmount = couponApplied ? (cartTotal * couponDiscount) / 100 : 0;
   const deliveryFee = cartTotal > 500 ? 0 : 49;
   const finalTotal = cartTotal - discountAmount + deliveryFee;
 
-  // Handle continue shopping
-  const handleContinueShopping = () => {
-    navigate("/products");
-  };
+  const handleContinueShopping = () => navigate("/products");
+  const handleCheckout         = () => navigate("/checkout");
 
-  // Handle checkout
-  const handleCheckout = () => {
-    navigate("/checkout");
-  };
-
-  // Handle clear cart
   const handleClearCart = async () => {
     if (window.confirm("Are you sure you want to clear your cart?")) {
       setIsUpdating(true);
       try {
         await clearCart();
+        setLimitMessages({});
       } catch (error) {
         console.error('Error clearing cart:', error);
         alert('Failed to clear cart. Please try again.');
@@ -138,21 +159,39 @@ export default function Cart() {
     }
   };
 
-  // Handle view product
-  const handleViewProduct = (productId) => {
-      navigate(`/product/${productId}`);
+  const handleViewProduct = (productId) => navigate(`/product/${productId}`);
+
+  const handleAddToCart = (product, e) => {
+    e.stopPropagation();
+    // Build a minimal product object CartContext can validate limits against.
+    // Recommended products come from the API so they carry stock_quantity,
+    // dimensions, and is_foldable — pass them all through.
+    const cartProduct = {
+      id:              product.id,
+      name:            product.name,
+      price:           product.selling_price ?? product.base_price,
+      originalPrice:   product.base_price,
+      image:           product.featured_image ?? null,
+      slug:            product.slug ?? "",
+      sme_id:          product.sme_id ?? null,
+      sme_name:        product.sme_name ?? "",
+      commission_rate: product.commission_rate ?? 0,
+      commission_type: product.commission_type ?? "",
+      sku:             product.sku ?? "",
+      seller:          product.sme_name ?? "",
+      stock_quantity:  product.stock_quantity ?? null,
+      length_cm:       product.length_cm  ?? null,
+      width_cm:        product.width_cm   ?? null,
+      height_cm:       product.height_cm  ?? null,
+      weight_kg:       product.weight_kg  ?? null,
+      is_foldable:     product.is_foldable ?? false,
     };
 
-  // Handle add to cart from recommendations
-  const handleAddToCart = async (product, e) => {
-    e.stopPropagation();
-    try {
-      await cartService.addToCart(product.id, 1);
-      await refreshCart();
+    const result = addToCart(cartProduct, 1);
+    if (!result.success) {
+      alert(result.message || "Could not add item to cart.");
+    } else {
       alert(`${product.name} added to cart!`);
-    } catch (error) {
-      console.error('Error adding to cart:', error);
-      alert('Failed to add item to cart.');
     }
   };
 
@@ -160,7 +199,7 @@ export default function Cart() {
     if (!price && price !== 0) return 'R0.00';
     return `R${parseFloat(price).toLocaleString(undefined, {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     })}`;
   };
 
@@ -169,6 +208,8 @@ export default function Cart() {
     if (item.image) return item.image;
     return productPlaceholder;
   };
+
+  // ── Empty cart ─────────────────────────────────────────────────────────────
 
   if (cartCount === 0) {
     return (
@@ -193,7 +234,6 @@ export default function Cart() {
             </button>
           </div>
 
-          {/* Recommendations for empty cart */}
           {recommendedProducts.length > 0 && (
             <div className={styles.recommendations}>
               <h2 className={styles.sectionTitle}>Recommended for you</h2>
@@ -208,10 +248,7 @@ export default function Cart() {
                       <img 
                         src={product.featured_image || productPlaceholder} 
                         alt={product.name}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = productPlaceholder;
-                        }}
+                        onError={(e) => { e.target.onerror = null; e.target.src = productPlaceholder; }}
                       />
                     </div>
                     <div className={styles.recommendedInfo}>
@@ -236,10 +273,11 @@ export default function Cart() {
     );
   }
 
+  // ── Main cart ──────────────────────────────────────────────────────────────
+
   return (
     <div className={styles.cartPage}>
       <div className="container">
-        {/* Loading Overlay */}
         {isUpdating && (
           <div className={styles.loadingOverlay}>
             <div className={styles.loadingSpinner}></div>
@@ -247,7 +285,6 @@ export default function Cart() {
           </div>
         )}
 
-        {/* Breadcrumb */}
         <nav className={styles.breadcrumb}>
           <Link to="/">Home</Link> &gt;
           <Link to="/products">Products</Link> &gt;
@@ -273,97 +310,125 @@ export default function Cart() {
               </button>
             </div>
 
-            {cartItems.map(item => (
-              <div key={item.id} className={styles.cartItem}>
-                <div className={styles.itemImage}>
-                  <img 
-                    src={getProductImage(item)} 
-                    alt={item.product_name || item.name}
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = productPlaceholder;
-                    }}
-                  />
-                </div>
-                
-                <div className={styles.itemDetails}>
-                  <div className={styles.itemHeader}>
-                    <h3 className={styles.itemName}>
-                      <Link to={`/product/${item.product_id || item.id}`}>
-                        {item.product_name || item.name}
-                      </Link>
-                    </h3>
-                    <button 
-                      className={styles.removeBtn}
-                      onClick={() => handleRemoveItem(item.id)}
-                      disabled={isUpdating}
-                      aria-label="Remove item"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-                      </svg>
-                    </button>
+            {cartItems.map(item => {
+              // Derive per-item ceiling for UI controls
+              const { max: itemMax, reason: itemReason } = getItemMax(item.id);
+              const atMax   = item.quantity >= itemMax;
+              const maxHint = itemReason; // shown as tooltip / inline message
+
+              return (
+                <div key={item.id} className={styles.cartItem}>
+                  <div className={styles.itemImage}>
+                    <img 
+                      src={getProductImage(item)} 
+                      alt={item.product_name || item.name}
+                      onError={(e) => { e.target.onerror = null; e.target.src = productPlaceholder; }}
+                    />
                   </div>
                   
-                  {item.sme_name && (
-                    <p className={styles.itemSeller}>Sold by: {item.sme_name}</p>
-                  )}
-                  
-                  {item.variant_name && (
-                    <p className={styles.itemVariant}>Variant: {item.variant_name}</p>
-                  )}
-                  
-                  <p className={styles.itemCategory}>
-                    {item.product_details?.category_name || item.category || 'General'}
-                  </p>
-                  
-                  <div className={styles.itemPrice}>
-                    <span className={styles.currentPrice}>
-                      {formatPrice(item.price)}
-                    </span>
-                    {item.product_details?.base_price > item.price && (
-                      <span className={styles.originalPrice}>
-                        {formatPrice(item.product_details.base_price)}
+                  <div className={styles.itemDetails}>
+                    <div className={styles.itemHeader}>
+                      <h3 className={styles.itemName}>
+                        <Link to={`/product/${item.product_id || item.id}`}>
+                          {item.product_name || item.name}
+                        </Link>
+                      </h3>
+                      <button 
+                        className={styles.removeBtn}
+                        onClick={() => handleRemoveItem(item.id)}
+                        disabled={isUpdating}
+                        aria-label="Remove item"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                        </svg>
+                      </button>
+                    </div>
+                    
+                    {item.sme_name && (
+                      <p className={styles.itemSeller}>Sold by: {item.sme_name}</p>
+                    )}
+                    {item.variant_name && (
+                      <p className={styles.itemVariant}>Variant: {item.variant_name}</p>
+                    )}
+                    <p className={styles.itemCategory}>
+                      {item.product_details?.category_name || item.category || 'General'}
+                    </p>
+                    <div className={styles.itemPrice}>
+                      <span className={styles.currentPrice}>
+                        {formatPrice(item.price)}
                       </span>
+                      {item.product_details?.base_price > item.price && (
+                        <span className={styles.originalPrice}>
+                          {formatPrice(item.product_details.base_price)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Inline limit message — appears below price, same line width */}
+                    {limitMessages[item.id] && (
+                      <p style={{
+                        margin: '4px 0 0',
+                        fontSize: '12px',
+                        color: '#b45309',
+                        fontWeight: 500,
+                      }}>
+                        ⚠ {limitMessages[item.id]}
+                      </p>
                     )}
                   </div>
-                </div>
-                
-                <div className={styles.itemQuantity}>
-                  <div className={styles.quantityControls}>
-                    <button
-                      className={styles.quantityBtn}
-                      onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                      disabled={isUpdating}
-                      aria-label="Decrease quantity"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      min="1"
-                      max={item.product_details?.stock_quantity || 99}
-                      value={item.quantity}
-                      onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
-                      className={styles.quantityInput}
-                      disabled={isUpdating}
-                      aria-label="Quantity"
-                    />
-                    <button
-                      className={styles.quantityBtn}
-                      onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                      disabled={isUpdating || item.quantity >= (item.product_details?.stock_quantity || 99)}
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
+                  
+                  <div className={styles.itemQuantity}>
+                    <div className={styles.quantityControls}>
+                      <button
+                        className={styles.quantityBtn}
+                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                        disabled={isUpdating}
+                        aria-label="Decrease quantity"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max={itemMax}
+                        value={item.quantity}
+                        onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                        className={styles.quantityInput}
+                        disabled={isUpdating}
+                        aria-label="Quantity"
+                      />
+                      <button
+                        className={styles.quantityBtn}
+                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                        disabled={isUpdating || atMax}
+                        aria-label="Increase quantity"
+                        title={atMax && maxHint ? maxHint : undefined}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Stock / PAXI cap label under quantity controls */}
+                    {atMax && maxHint && !limitMessages[item.id] && (
+                      <p style={{
+                        margin: '4px 0 0',
+                        fontSize: '11px',
+                        color: '#6b7280',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {maxHint}
+                      </p>
+                    )}
+
+                    <div className={styles.itemTotal}>
+                      {formatPrice(item.price * item.quantity)}
+                    </div>
                   </div>
-                  <div className={styles.itemTotal}>
-                    {formatPrice(item.price * item.quantity)}
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Order Summary */}
@@ -375,14 +440,12 @@ export default function Cart() {
                 <span>Subtotal ({cartCount} items)</span>
                 <span>{formatPrice(cartTotal)}</span>
               </div>
-              
               {couponApplied && (
                 <div className={styles.summaryRow}>
                   <span>Discount ({couponDiscount}%)</span>
                   <span className={styles.discount}>-{formatPrice(discountAmount)}</span>
                 </div>
               )}
-              
             </div>
 
             {/* Coupon Code */}
@@ -412,7 +475,6 @@ export default function Cart() {
               )}
             </div>
 
-            {/* Checkout Button */}
             <button 
               className={`${styles.btn} ${styles.checkoutBtn}`}
               onClick={handleCheckout}
@@ -421,7 +483,6 @@ export default function Cart() {
               Proceed to Checkout
             </button>
 
-            {/* Continue Shopping */}
             <button 
               className={`${styles.btn} ${styles.continueBtn}`}
               onClick={handleContinueShopping}
@@ -430,7 +491,6 @@ export default function Cart() {
               Continue Shopping
             </button>
 
-            {/* Security Info */}
             <div className={styles.securityInfo}>
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/>
@@ -461,10 +521,7 @@ export default function Cart() {
                       <img 
                         src={product.featured_image || productPlaceholder} 
                         alt={product.name}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = productPlaceholder;
-                        }}
+                        onError={(e) => { e.target.onerror = null; e.target.src = productPlaceholder; }}
                       />
                     </div>
                     <div className={styles.recommendedInfo}>
@@ -475,12 +532,7 @@ export default function Cart() {
                           <>
                             <span className={styles.stars}>
                               {[...Array(5)].map((_, i) => (
-                                <span
-                                  key={i}
-                                  className={`${styles.star} ${i < Math.floor(product.average_rating) ? styles.filled : ''}`}
-                                >
-                                  ★
-                                </span>
+                                <span key={i} className={`${styles.star} ${i < Math.floor(product.average_rating) ? styles.filled : ''}`}>★</span>
                               ))}
                             </span>
                             <span>({product.review_count || 0})</span>

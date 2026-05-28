@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useCart } from "../contexts/CartContext";
+import { computeMaxQuantity } from "../contexts/CartContext";
 import { checkoutService } from "../services/checkoutService";
 import { paymentService } from "../services/paymentService";
 import { addressService } from "../services/addressService";
@@ -461,6 +462,20 @@ export default function Checkout() {
     }
     if (!agreeToTerms) {
       setErrorMessage("Please agree to the Terms & Conditions.");
+      return;
+    }
+
+    const stockErrors = cartItems
+  .map(item => {
+    const { max, reason } = computeMaxQuantity(item, cartItems, item.id);
+    return item.quantity > max
+      ? `"${item.product_name || item.name}": ${reason ?? `limit is ${max}`}`
+      : null;
+  })
+  .filter(Boolean);
+
+    if (stockErrors.length > 0) {
+      setErrorMessage("Some items exceed available limits:\n" + stockErrors.join("\n"));
       return;
     }
     setIsLoading(true);
